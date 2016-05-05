@@ -4,7 +4,8 @@
 'use strict'
 
 const fs = require('fs');
-var tg = require('telegram-node-bot')('221244615:AAHuSZHjRAlB8y9ALIVhKnBtpD-8-r6OKcY');
+const secret = require('./secret');
+var tg = require('telegram-node-bot')(secret.token);
 var req = require('tiny_request');
 
 tg.router.
