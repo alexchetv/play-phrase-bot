@@ -26,18 +26,18 @@ tg.controller('SettingsController', ($) => {
 
 tg.controller('WordsController', ($) => {
 	/*console.log('args', $.args);
-	console.log('message', $.message);
-	console.log('query', $.query);*/
+	 console.log('message', $.message);
+	 console.log('query', $.query);*/
 
 	if ($.args) {
 		//normalize query string
 		var query_norm = $.args.replace('_', ' ').replace('/', '');
-		$.sendMessage('Now seeking <b>'+query_norm+'</b> ...',{parse_mode: 'HTML'},(answer) => {
-			if (answer) {
+		$.sendMessage('Now seeking <b>' + query_norm + '</b> ...', {parse_mode: 'HTML'}, (answer, err) => {
+			if (!err) {
 				console.log('answer', answer);
-				seekPhrase($,answer.result,query_norm);
+				seekPhrase($, answer.result, query_norm);
 			} else {
-				console.error('Wrong Communication')
+				console.error('error Send Message', err);
 			}
 		});
 	} else {
@@ -54,22 +54,22 @@ tg.controller('VideoController', ($) => {
 })
 
 tg.callbackQueries(($) => {
-	console.log('callbackQueries',$);
+	console.log('callbackQueries', $);
 
 })
 
 /*tg.inlineMode(($) => {
-	console.log('ttttttttttttt');
-	tg.answerInlineQuery($.id, [{
-		type: 'video',
-		video_url: 'http://playphrase.me/video/phrase/5448547209bd000ab7589fc6.mp4',
-		mime_type: 'video/mp4',
-		thumb_url: 'http://www.phrases.org.uk/images/under-the-thumb.jpg',
-		title: 'example'
-	}])
-})*/
+ console.log('ttttttttttttt');
+ tg.answerInlineQuery($.id, [{
+ type: 'video',
+ video_url: 'http://playphrase.me/video/phrase/5448547209bd000ab7589fc6.mp4',
+ mime_type: 'video/mp4',
+ thumb_url: 'http://www.phrases.org.uk/images/under-the-thumb.jpg',
+ title: 'example'
+ }])
+ })*/
 
-var show = ($, url,caption)=> {
+var show = ($, url, caption)=> {
 	console.log('show');
 	var tempStream = fs.createWriteStream('temp.mp4');
 	req.get({
@@ -78,34 +78,39 @@ var show = ($, url,caption)=> {
 		},
 		function (body, response, err) {
 			console.log('sendVideo');
-			$.sendVideo(fs.createReadStream('temp/temp.mp4'),{caption:caption});
+			$.sendVideo(fs.createReadStream('temp/temp.mp4'), {caption: caption});
 		});
 }
 
-var showVideos = ($, a)=> {
-	if (a.length > 0) {
-		var tempStream = fs.createWriteStream('temp/temp.mp4');
+var showVideos = ($, a, n)=> {
+	n = n?n:0;
+	if (n < a.length) {
+		var fileName = 'video/' + a[n]._id + ".mp4";
+		var wstream = fs.createWriteStream(fileName);
+		var self = this;
+		wstream.on('finish', () => {
+			$.sendVideo(fs.createReadStream(fileName), {caption: a[n].caption}, (body, err) => {
+				if (err) {
+					console.error('error Send Video', err);
+				} else {
+					if (body && body.result && body.result.video && body.result.video.file_id) {
+						savedVideo.push({
+							file_id: body.result.video.file_id,
+							url: a[n].url
+						})
+					}
+					showVideos($, a, n+1);
+				}
+			})
+		})
+
 		req.get({
-				url: a[0].url,
-				pipe: tempStream
+				url: a[n].url,
+				pipe: wstream
 			},
 			function (body, response, err) {
 				if (err) {
-					$.sendMessage('Error')
-				} else {
-					$.sendVideo(fs.createReadStream('temp/temp.mp4'), {caption: a[0].caption},
-						(b) => {
-							console.log('sendVideo', b);
-							if (b && b.result && b.result.video && b.result.video.file_id) {
-								savedVideo.push({
-									file_id: b.result.video.file_id,
-									url: a[0].url
-								})
-							}
-							a.shift();
-							showVideos($, a);
-						}
-					);
+					console.error('error Load Video', err);
 				}
 			});
 	}
@@ -113,7 +118,7 @@ var showVideos = ($, a)=> {
 
 var savedVideo = [];
 
-var seekPhrase = ($, sent_message,q)=> {
+var seekPhrase = ($, sent_message, q)=> {
 	{
 		req.get({
 				url: 'http://playphrase.me/search',
@@ -132,19 +137,20 @@ var seekPhrase = ($, sent_message,q)=> {
 
 						body.phrases.forEach(function (item, i, arr) {
 							vidAray.push({
+								_id: item._id,
 								caption: item.text,
 								url: 'http://playphrase.me/video/phrase/' + item._id + '.mp4'
 							})
 							//console.log(item);
 							/*buttonAray.push({
-								text:item.text,
-								callback: () => {
-									show($,'http://playphrase.me/video/phrase/'+item._id+'.mp4',item.text)
-								}
-							})*/
+							 text:item.text,
+							 callback: () => {
+							 show($,'http://playphrase.me/video/phrase/'+item._id+'.mp4',item.text)
+							 }
+							 })*/
 							//show($,'http://playphrase.me/video/phrase/'+item._id+'.mp4',item.text)
 						});
-						showVideos($,vidAray);
+						showVideos($, vidAray);
 						//$.runInlineMenu('sendMessage', 'Select:', {}, buttonAray, 1)
 					} else {
 						var mes = 'Not Found.\n';
@@ -157,7 +163,11 @@ var seekPhrase = ($, sent_message,q)=> {
 								mes += '/_' + prepared + ' (' + item.count + ')\n';
 							});
 						}
-						tg.editMessageText('Now seeking <b>'+q+'</b>.\n'+mes,{chat_id:sent_message.chat.id,message_id:sent_message.message_id,parse_mode:'HTML'});
+						tg.editMessageText('Now seeking <b>' + q + '</b>.\n' + mes, {
+							chat_id: sent_message.chat.id,
+							message_id: sent_message.message_id,
+							parse_mode: 'HTML'
+						});
 					}
 				} else {
 					$.sendMessage('error');
