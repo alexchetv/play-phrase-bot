@@ -4,6 +4,7 @@
   "description": "",
   "main": "server.js",
   "dependencies": {
+    "cradle": "^0.7.1",
     "telegram-node-bot": "^2.1.2"
   },
   "devDependencies": {},
