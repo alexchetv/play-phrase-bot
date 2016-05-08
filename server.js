@@ -91,8 +91,17 @@ tg.callbackQueries((callback_data) => {
  })*/
 
 var sendVideoFromAttach = (id, chat_id, a, n, tfid) => {
+	var options = {
+		caption: a[n].caption,
+		reply_markup: JSON.stringify({
+			inline_keyboard:[[{
+				text:a[n].info,
+				url: a[n].imdb
+			}]]
+		})
+	}
 	if (tfid) {
-		tg.sendVideo(chat_id,tfid, {caption: a[n].caption}, (body, err) => {
+		tg.sendVideo(chat_id,tfid, options, (body, err) => {
 			if (err || !body || !body.ok) {
 				console.error('error Send TFID', err ? err : body);
 				db.merge(id, {telegram_file_id: null}, function (err, res) {
@@ -117,7 +126,7 @@ var sendVideoFromAttach = (id, chat_id, a, n, tfid) => {
 		var writeToFileStream = fs.createWriteStream(fileName);
 		writeToFileStream.on('finish', () => {
 
-			tg.sendVideo(chat_id,fs.createReadStream(fileName), {caption: a[n].caption}, (body, err) => {
+			tg.sendVideo(chat_id,fs.createReadStream(fileName), options, (body, err) => {
 				fs.unlink(fileName);
 				if (err || !body || !body.ok) {
 					console.error('error Send Video', err ? err : body);
@@ -141,12 +150,14 @@ var showVideos = (chat_id, a, n)=> {
 	n = n ? n : 0;
 	if (n < a.length) {
 		db.get(a[n]._id, function (err, doc) {
-			if (doc && doc._attachments && doc._attachments.video && doc._attachments.video.stub) {
+			if (doc && doc.caption && doc.info && doc.imdb && doc._attachments && doc._attachments.video && doc._attachments.video.stub) {
 				sendVideoFromAttach(a[n]._id, chat_id, a, n, doc.telegram_file_id);
 			} else {
 				var writeToAttachStream;
 				db.save(a[n]._id, {
-					text: a[n].caption
+					text: a[n].caption,
+					info: a[n].info,
+					imdb: a[n].imdb
 				}, function (err, res) {
 					if (err) {
 						console.error('error Save DocumentToDB', err);
@@ -170,10 +181,6 @@ var showVideos = (chat_id, a, n)=> {
 			}
 		});
 	}
-}
-
-var commandFromPhrase = (phrase) => {
-	return '/_'+ phrase.replace(' ', '_').replace('\'', '_');
 }
 
 var seekPhrase = (chat_id, sent_message, queryString)=> {
@@ -203,7 +210,9 @@ var seekPhrase = (chat_id, sent_message, queryString)=> {
 							vidAray.push({
 								_id: item._id,
 								caption: item.text,
-								url: 'http://playphrase.me/video/phrase/' + item._id + '.mp4'
+								url: 'http://playphrase.me/video/phrase/' + item._id + '.mp4',
+								info: item.video_info.info,
+								imdb: item.video_info.imdb
 							})
 						});
 						showVideos(chat_id, vidAray);
