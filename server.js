@@ -47,17 +47,13 @@ tg.controller('SettingsController', ($) => {
 })
 
 tg.controller('WordsController', ($) => {
-	/*console.log('args', $.args);
-	 console.log('message', $.message);
-	 console.log('query', $.query);*/
-
 	if ($.args) {
 		//normalize query string
 		var query_norm = $.args.replace('_', ' ').replace('/', '');
 		$.sendMessage('Now seeking <b>' + query_norm + '</b> ...', {parse_mode: 'HTML'}, (answer, err) => {
 			if (!err) {
 				//console.log('answer', answer);
-				seekPhrase($, answer.result, query_norm);
+				seekPhrase($.chatId, answer.result, query_norm);
 			} else {
 				console.error('error Send Message', err);
 			}
@@ -65,18 +61,21 @@ tg.controller('WordsController', ($) => {
 	} else {
 		$.sendMessage('Nothing to seek!');
 	}
-
-
 })
 
-tg.controller('VideoController', ($) => {
-	tg.for('/video', () => {
-		$.sendVideo(fs.createReadStream('video/truba.mp4'))
-	})
-})
-
-tg.callbackQueries(($) => {
-	console.log('callbackQueries', $);
+tg.callbackQueries((callback_data) => {
+	console.log('callback_data', callback_data);
+	var chat_id = callback_data.message.chat.id;
+	//normalize query string
+	var query_norm = callback_data.data.replace('_', ' ').replace('/', '');
+	tg.sendMessage(chat_id,'Now seeking <b>' + query_norm + '</b> ...', {parse_mode: 'HTML'}, (answer, err) => {
+		if (!err) {
+			//console.log('answer', answer);
+			seekPhrase(chat_id, answer.result, query_norm);
+		} else {
+			console.error('error Send Message', err);
+		}
+	});
 
 })
 
@@ -91,20 +90,20 @@ tg.callbackQueries(($) => {
  }])
  })*/
 
-var sendVideoFromAttach = (id, $, a, n, tfid) => {
+var sendVideoFromAttach = (id, chat_id, a, n, tfid) => {
 	if (tfid) {
-		$.sendVideo(tfid, {caption: a[n].caption}, (body, err) => {
+		tg.sendVideo(chat_id,tfid, {caption: a[n].caption}, (body, err) => {
 			if (err || !body || !body.ok) {
 				console.error('error Send TFID', err ? err : body);
 				db.merge(id, {telegram_file_id: null}, function (err, res) {
 					if (err) {
 						console.error('error Delete TFID', err);
 					} else {
-						showVideos($, a, n);
+						showVideos(chat_id, a, n);
 					}
 				});
 			} else {
-				showVideos($, a, n + 1);
+				showVideos(chat_id, a, n + 1);
 			}
 		})
 	} else {
@@ -118,7 +117,7 @@ var sendVideoFromAttach = (id, $, a, n, tfid) => {
 		var writeToFileStream = fs.createWriteStream(fileName);
 		writeToFileStream.on('finish', () => {
 
-			$.sendVideo(fs.createReadStream(fileName), {caption: a[n].caption}, (body, err) => {
+			tg.sendVideo(chat_id,fs.createReadStream(fileName), {caption: a[n].caption}, (body, err) => {
 				fs.unlink(fileName);
 				if (err || !body || !body.ok) {
 					console.error('error Send Video', err ? err : body);
@@ -130,7 +129,7 @@ var sendVideoFromAttach = (id, $, a, n, tfid) => {
 							}
 						});
 					}
-					showVideos($, a, n + 1);
+					showVideos(chat_id, a, n + 1);
 				}
 			})
 		})
@@ -138,16 +137,13 @@ var sendVideoFromAttach = (id, $, a, n, tfid) => {
 	}
 }
 
-var showVideos = ($, a, n)=> {
+var showVideos = (chat_id, a, n)=> {
 	n = n ? n : 0;
 	if (n < a.length) {
 		db.get(a[n]._id, function (err, doc) {
 			if (doc && doc._attachments && doc._attachments.video && doc._attachments.video.stub) {
-				console.log('Doc ', doc);
-				sendVideoFromAttach(a[n]._id, $, a, n, doc.telegram_file_id);
+				sendVideoFromAttach(a[n]._id, chat_id, a, n, doc.telegram_file_id);
 			} else {
-				console.log('Doc Not Found');
-
 				var writeToAttachStream;
 				db.save(a[n]._id, {
 					text: a[n].caption
@@ -164,7 +160,7 @@ var showVideos = ($, a, n)=> {
 								if (err) {
 									console.error('error saveAttachment', err);
 								} else {
-									sendVideoFromAttach(res.id, $, a, n);
+									sendVideoFromAttach(res.id, chat_id, a, n);
 								}
 							}
 						)
@@ -176,21 +172,31 @@ var showVideos = ($, a, n)=> {
 	}
 }
 
-var seekPhrase = ($, sent_message, q)=> {
+var commandFromPhrase = (phrase) => {
+	return '/_'+ phrase.replace(' ', '_').replace('\'', '_');
+}
+
+var seekPhrase = (chat_id, sent_message, queryString)=> {
 	{
 		req.get({
 				url: 'http://playphrase.me/search',
 				port: 9093,
 				json: true,
 				query: {
-					q: q,
+					q: queryString,
 					skip: '0'
 				}
 			},
 			function (body, response, err) {
 				if (!err && response.statusCode == 200) {
+					var mes;
+					var options = {
+						chat_id: sent_message.chat.id,
+						message_id: sent_message.message_id,
+						parse_mode: 'HTML'
+					}
 					if (body.count) {
-						$.sendMessage('Found: ' + body.count);
+						mes = 'Found: ' + body.count;
 						var vidAray = [];
 
 						body.phrases.forEach(function (item, i, arr) {
@@ -199,36 +205,23 @@ var seekPhrase = ($, sent_message, q)=> {
 								caption: item.text,
 								url: 'http://playphrase.me/video/phrase/' + item._id + '.mp4'
 							})
-							//console.log(item);
-							/*buttonAray.push({
-							 text:item.text,
-							 callback: () => {
-							 show($,'http://playphrase.me/video/phrase/'+item._id+'.mp4',item.text)
-							 }
-							 })*/
-							//show($,'http://playphrase.me/video/phrase/'+item._id+'.mp4',item.text)
 						});
-						showVideos($, vidAray);
-						//$.runInlineMenu('sendMessage', 'Select:', {}, buttonAray, 1)
+						showVideos(chat_id, vidAray);
 					} else {
-						var mes = 'Not Found.\n';
+						mes = 'Not Found.\n';
+						var keyboard=[[]];
 						if (body.suggestions && body.suggestions[0]) {
-							mes += 'Did you mean:\n';
-							console.log('suggestions', body.suggestions);
-
+							mes += 'Did you mean:';
 							body.suggestions.forEach(function (item, i, arr) {
-								var prepared = item.text.replace(' ', '_');
-								mes += '/_' + prepared + ' (' + item.count + ')\n';
+								keyboard[0].push({text:item.text,
+									callback_data: item.text});
 							});
+							options.reply_markup = JSON.stringify({inline_keyboard:keyboard});
 						}
-						tg.editMessageText('Now seeking <b>' + q + '</b>.\n' + mes, {
-							chat_id: sent_message.chat.id,
-							message_id: sent_message.message_id,
-							parse_mode: 'HTML'
-						});
 					}
+					tg.editMessageText('Now seeking <b>' + queryString + '</b>.\n' + mes, options);
 				} else {
-					$.sendMessage('error');
+					tg.sendMessage(chat_id,'error');
 				}
 			})
 	}
