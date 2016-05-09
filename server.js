@@ -64,7 +64,6 @@ tg.controller('WordsController', ($) => {
 })
 
 tg.callbackQueries((callback_data) => {
-	console.log('callback_data', callback_data);
 	var chat_id = callback_data.message.chat.id;
 	//normalize query string
 	var query_norm = callback_data.data.replace('_', ' ').replace('/', '');
@@ -90,7 +89,7 @@ tg.callbackQueries((callback_data) => {
  }])
  })*/
 
-var sendVideoFromAttach = (id, chat_id, a, n, tfid) => {
+var sendVideoFromAttach = (chat_id, a, n, tfid) => {
 	var options = {
 		caption: a[n].caption,
 		reply_markup: JSON.stringify({
@@ -104,19 +103,19 @@ var sendVideoFromAttach = (id, chat_id, a, n, tfid) => {
 		tg.sendVideo(chat_id,tfid, options, (body, err) => {
 			if (err || !body || !body.ok) {
 				console.error('error Send TFID', err ? err : body);
-				db.merge(id, {telegram_file_id: null}, function (err, res) {
+				db.merge('p:' + a[n]._id, {tfid: null}, function (err, res) {
 					if (err) {
 						console.error('error Delete TFID', err);
 					} else {
-						showVideos(chat_id, a, n);
+						showVideo(chat_id, a, n);
 					}
 				});
 			} else {
-				showVideos(chat_id, a, n + 1);
+				showVideo(chat_id, a, n + 1);
 			}
 		})
 	} else {
-		var readFromAttachStream = db.getAttachment(id, 'video', function (err) {
+		var readFromAttachStream = db.getAttachment('p:' + a[n]._id, 'video', function (err) {
 			if (err) {
 				console.error('error getAttachment', err);
 			}
@@ -132,36 +131,46 @@ var sendVideoFromAttach = (id, chat_id, a, n, tfid) => {
 					console.error('error Send Video', err ? err : body);
 				} else {
 					if (body.result && body.result.video && body.result.video.file_id) {
-						db.merge(a[n]._id, {telegram_file_id: body.result.video.file_id}, function (err, res) {
+						db.merge('p:' + a[n]._id, {tfid: body.result.video.file_id}, function (err, res) {
 							if (err) {
-								console.error('error Merge telegram_file_id', err);
+								console.error('error Merge TFID', err);
 							}
 						});
 					}
-					showVideos(chat_id, a, n + 1);
+					showVideo(chat_id, a, n + 1);
 				}
 			})
 		})
 		readFromAttachStream.pipe(writeToFileStream);
 	}
 }
-
-var showVideos = (chat_id, a, n)=> {
+/**
+ * show videos for phrase array
+ * @param chat_id
+ * @param a phrase array
+ * @param n start from (default = 0)
+ */
+var showVideo = (chat_id, a, n)=> {
 	n = n ? n : 0;
 	if (n < a.length) {
-		db.get(a[n]._id, function (err, doc) {
-			if (doc && doc.caption && doc.info && doc.imdb && doc._attachments && doc._attachments.video && doc._attachments.video.stub) {
-				sendVideoFromAttach(a[n]._id, chat_id, a, n, doc.telegram_file_id);
+		db.get('p:' + a[n]._id, function (err, doc) {
+			if (doc && doc.text && doc.info && doc.imdb && doc._attachments && doc._attachments.video && doc._attachments.video.stub) {
+				//phrase and video already saved in DB
+				sendVideoFromAttach(chat_id, a, n, doc.tfid);
 			} else {
+				//not saved yet
 				var writeToAttachStream;
-				db.save(a[n]._id, {
+				//save phrase
+				db.save('p:' + a[n]._id, {
 					text: a[n].caption,
 					info: a[n].info,
-					imdb: a[n].imdb
+					imdb: a[n].imdb,
+					movie: a[n].movie
 				}, function (err, res) {
 					if (err) {
-						console.error('error Save DocumentToDB', err);
+						console.error('error Save PhraseToDB', err);
 					} else {
+						//and save video as attachment
 						var attachmentData = {
 							name: 'video',
 							'Content-Type': 'video/mp4'
@@ -171,16 +180,20 @@ var showVideos = (chat_id, a, n)=> {
 								if (err) {
 									console.error('error saveAttachment', err);
 								} else {
-									sendVideoFromAttach(res.id, chat_id, a, n);
+									sendVideoFromAttach(chat_id, a, n);
 								}
 							}
 						)
-						request(a[n].url).pipe(writeToAttachStream);
+						request(videoUrl(a[n]._id)).pipe(writeToAttachStream);
 					}
 				});
 			}
 		});
 	}
+}
+
+var videoUrl = (id) => {
+	return 'http://playphrase.me/video/phrase/' + id + '.mp4';
 }
 
 var seekPhrase = (chat_id, sent_message, queryString)=> {
@@ -204,18 +217,18 @@ var seekPhrase = (chat_id, sent_message, queryString)=> {
 					}
 					if (body.count) {
 						mes = 'Found: ' + body.count;
-						var vidAray = [];
+						var phraseAray = [];
 
 						body.phrases.forEach(function (item, i, arr) {
-							vidAray.push({
+							phraseAray.push({
 								_id: item._id,
 								caption: item.text,
-								url: 'http://playphrase.me/video/phrase/' + item._id + '.mp4',
 								info: item.video_info.info,
-								imdb: item.video_info.imdb
+								imdb: item.video_info.imdb,
+								movie: item.movie
 							})
 						});
-						showVideos(chat_id, vidAray);
+						showVideo(chat_id, phraseAray);
 					} else {
 						mes = 'Not Found.\n';
 						var keyboard=[[]];
@@ -228,7 +241,7 @@ var seekPhrase = (chat_id, sent_message, queryString)=> {
 							options.reply_markup = JSON.stringify({inline_keyboard:keyboard});
 						}
 					}
-					tg.editMessageText('Now seeking <b>' + queryString + '</b>.\n' + mes, options);
+					tg.editMessageText('Now seeking <b>' + queryString + '</b> ...\n' + mes, options);
 				} else {
 					tg.sendMessage(chat_id,'error');
 				}
