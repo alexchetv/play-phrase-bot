@@ -8,6 +8,7 @@ const secret = require('./secret');
 var tg = require('telegram-node-bot')(secret.token);
 var req = require('tiny_request');
 var request = require('request');
+var ellipsize = require('ellipsize');
 var cradle = require('cradle');
 var db = new (cradle.Connection)().database('telegram');
 
@@ -46,14 +47,19 @@ tg.controller('SettingsController', ($) => {
 	$.sendMessage('Settings will be here.');
 })
 
+
+var testFilter = (item) => {
+	return (item.video_info.info =='Shutter Island');
+}
+
 tg.controller('WordsController', ($) => {
 	if ($.args) {
 		//normalize query string
 		var query_norm = $.args.replace('_', ' ').replace('/', '');
-		$.sendMessage('Now seeking <b>' + query_norm + '</b> ...', {parse_mode: 'HTML'}, (answer, err) => {
+		$.sendMessage('Now seeking <b>' + query_norm + '</b> …', {parse_mode: 'HTML'}, (answer, err) => {
 			if (!err) {
 				//console.log('answer', answer);
-				seekPhrase($.chatId, answer.result, query_norm);
+				startSeek($.chatId, answer.result, query_norm,testFilter);
 			} else {
 				console.error('error Send Message', err);
 			}
@@ -67,10 +73,10 @@ tg.callbackQueries((callback_data) => {
 	var chat_id = callback_data.message.chat.id;
 	//normalize query string
 	var query_norm = callback_data.data.replace('_', ' ').replace('/', '');
-	tg.sendMessage(chat_id,'Now seeking <b>' + query_norm + '</b> ...', {parse_mode: 'HTML'}, (answer, err) => {
+	tg.sendMessage(chat_id, 'Now seeking <b>' + query_norm + '</b> ...', {parse_mode: 'HTML'}, (answer, err) => {
 		if (!err) {
 			//console.log('answer', answer);
-			seekPhrase(chat_id, answer.result, query_norm);
+			startSeek(chat_id, answer.result, query_norm,testFilter);
 		} else {
 			console.error('error Send Message', err);
 		}
@@ -91,16 +97,16 @@ tg.callbackQueries((callback_data) => {
 
 var sendVideoFromAttach = (chat_id, a, n, tfid) => {
 	var options = {
-		caption: a[n].caption,
+		caption: ellipsize(a[n].caption, 200, {ellipse: ' …'}),
 		reply_markup: JSON.stringify({
-			inline_keyboard:[[{
-				text:a[n].info,
+			inline_keyboard: [[{
+				text: a[n].info,
 				url: a[n].imdb
 			}]]
 		})
 	}
 	if (tfid) {
-		tg.sendVideo(chat_id,tfid, options, (body, err) => {
+		tg.sendVideo(chat_id, tfid, options, (body, err) => {
 			if (err || !body || !body.ok) {
 				console.error('error Send TFID', err ? err : body);
 				db.merge('p:' + a[n]._id, {tfid: null}, function (err, res) {
@@ -125,7 +131,7 @@ var sendVideoFromAttach = (chat_id, a, n, tfid) => {
 		var writeToFileStream = fs.createWriteStream(fileName);
 		writeToFileStream.on('finish', () => {
 
-			tg.sendVideo(chat_id,fs.createReadStream(fileName), options, (body, err) => {
+			tg.sendVideo(chat_id, fs.createReadStream(fileName), options, (body, err) => {
 				fs.unlink(fileName);
 				if (err || !body || !body.ok) {
 					console.error('error Send Video', err ? err : body);
@@ -196,55 +202,145 @@ var videoUrl = (id) => {
 	return 'http://playphrase.me/video/phrase/' + id + '.mp4';
 }
 
-var seekPhrase = (chat_id, sent_message, queryString)=> {
-	{
-		req.get({
-				url: 'http://playphrase.me/search',
-				port: 9093,
-				json: true,
-				query: {
-					q: queryString,
-					skip: '0'
-				}
-			},
-			function (body, response, err) {
-				if (!err && response.statusCode == 200) {
-					var mes;
-					var options = {
-						chat_id: sent_message.chat.id,
-						message_id: sent_message.message_id,
-						parse_mode: 'HTML'
-					}
-					if (body.count) {
-						mes = 'Found: ' + body.count;
-						var phraseAray = [];
+var startSeek = (chat_id, sent_message, queryString, filter)=> {
+	//console.log(filter);
+	var filtered = [];
+	//seekPhrase(chat_id, sent_message, queryString, filtered,0);
+	testseekPhrase(chat_id, sent_message, queryString, filter, filtered, 0, 5)
+};
 
-						body.phrases.forEach(function (item, i, arr) {
-							phraseAray.push({
+/**
+ *
+ * @param chat_id
+ * @param sent_message
+ * @param queryString string to seek
+ * @param filter function(phrase) If true include phrase in output
+ * @param filtered resulting filtered phrase array
+ * @param skip
+ * @param need length of  resulting filtered array enough to stop seeking
+ */
+var testseekPhrase = (chat_id, sent_message, queryString, filter, filtered, skip, need)=> {
+	var processed = skip;
+	console.log('skip',skip);
+	//query server
+	req.get({
+			url: 'http://playphrase.me/search',
+			port: 9093,
+			json: true,
+			query: {
+				q: queryString,
+				skip: skip
+			}
+		},
+		function (body, response, err) {
+
+			if (!err && response.statusCode == 200) {
+				if (body.phrases && body.phrases[0]) {
+					body.phrases.forEach(function (item, i, arr) {
+						processed +=1;
+						if (filter(item)) {
+							filtered.push({
 								_id: item._id,
 								caption: item.text,
 								info: item.video_info.info,
 								imdb: item.video_info.imdb,
-								movie: item.movie
+								movie: item.movie,
+								position: processed
 							})
-						});
-						showVideo(chat_id, phraseAray);
-					} else {
-						mes = 'Not Found.\n';
-						var keyboard=[[]];
+						}
+					});
+				}
+				if (body.phrases && body.phrases[0] && filtered.length <= need) { //continue search
+					testseekPhrase(chat_id, sent_message, queryString, filter, filtered, processed, need)
+				} else {
+					console.log(processed);
+					console.log(filtered);
+					if (skip == 0 && filtered.length == 0) { //nothing at all
+						var options = {
+							chat_id: sent_message.chat.id,
+							message_id: sent_message.message_id,
+							parse_mode: 'HTML'
+						}
+						var mes = 'Not Found.\n';
+						var keyboard = [[]];
 						if (body.suggestions && body.suggestions[0]) {
 							mes += 'Did you mean:';
 							body.suggestions.forEach(function (item, i, arr) {
-								keyboard[0].push({text:item.text,
-									callback_data: item.text});
+								keyboard[0].push({
+									text: item.text,
+									callback_data: item.text
+								});
 							});
-							options.reply_markup = JSON.stringify({inline_keyboard:keyboard});
+							options.reply_markup = JSON.stringify({inline_keyboard: keyboard});
+							tg.editMessageText('Now seeking <b>' + queryString + '</b> …\n' + mes, options);
 						}
+					} else {
+						if (filtered.length > need) { //something remain
+							var extra;
+							while(filtered.length > need){
+								extra = filtered.pop();
+							}
+							var nextSkip = extra.position-1;
+						}
+						showVideo(chat_id, filtered);
 					}
-					tg.editMessageText('Now seeking <b>' + queryString + '</b> ...\n' + mes, options);
-				} else {
-					tg.sendMessage(chat_id,'error');
 				}
-			})
-	}
+			} else {
+				console.log('API error' + (response ? response.statusCode : '') + '\n' + err);
+			}
+		})
+};
+
+
+var seekPhrase = (chat_id, sent_message, queryString, filtered, skip) => {
+	req.get({
+			url: 'http://playphrase.me/search',
+			port: 9093,
+			json: true,
+			query: {
+				q: queryString,
+				skip: skip
+			}
+		},
+		function (body, response, err) {
+			if (!err && response.statusCode == 200) {
+				var mes;
+				var options = {
+					chat_id: sent_message.chat.id,
+					message_id: sent_message.message_id,
+					parse_mode: 'HTML'
+				}
+				if (body.count) {
+					mes = 'Found: ' + body.count;
+					//var phraseAray = [];
+
+					body.phrases.forEach(function (item, i, arr) {
+						filtered.push({
+							_id: item._id,
+							caption: item.text,
+							info: item.video_info.info,
+							imdb: item.video_info.imdb,
+							movie: item.movie
+						})
+					});
+					showVideo(chat_id, filtered);
+				} else {
+					mes = 'Not Found.\n';
+					var keyboard = [[]];
+					if (body.suggestions && body.suggestions[0]) {
+						mes += 'Did you mean:';
+						body.suggestions.forEach(function (item, i, arr) {
+							keyboard[0].push({
+								text: item.text,
+								callback_data: item.text
+							});
+						});
+						options.reply_markup = JSON.stringify({inline_keyboard: keyboard});
+					}
+				}
+				tg.editMessageText('Now seeking <b>' + queryString + '</b> …\n' + mes, options);
+			} else {
+				tg.sendMessage(chat_id, 'API error' + (response ? response.statusCode : '') + '\n' + err);
+			}
+		})
 };
