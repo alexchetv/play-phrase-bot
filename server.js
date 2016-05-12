@@ -7,8 +7,6 @@ var cradle = require('cradle');
 var db = new (cradle.Connection)().database('telegram');
 const Queue = require('./queue.js');
 
-var Filter = null;
-
 db.exists(function (err, exists) {
 	if (err) {
 		console.error('Database Error', err);
@@ -19,7 +17,7 @@ db.exists(function (err, exists) {
 				if (err) {
 					console.error('Database Info Error', err);
 				} else {
-					console.log(info);
+					//console.log(info);
 				}
 			}
 		)
@@ -30,39 +28,47 @@ db.exists(function (err, exists) {
 
 tg.router.
 	when(['/start', '/Start'], 'StartController').
-	when(['/filter','/Filter','/f','/F'], 'FilterController').
+	when(['/movie','/Movie','/m','/M'], 'FilterController').
+	when(['/all','/All'], 'AllController').
 	when(['/_'], 'WordsController').
 	otherwise('WordsController')
 
 tg.controller('StartController', ($) => {
-	console.log('/start');
-	$.sendMessage('Send me any text to find phrase from movie.\nTo filter results by movie name send /filter <b>name start from</b>\nTo take filter off just send /filter',{parse_mode: 'HTML'});
+	$.sendMessage('Send me any text to find phrase from movie.\nTo filter results by movie name send /movie <b>part of the name</b>\nTo take this filter off just send /all',{parse_mode: 'HTML'});
+})
+
+tg.controller('AllController', ($) => {
+		$.args = null;
+		$.routeTo('/movie');
 })
 
 tg.controller('FilterController', ($) => {
-	console.log('filter',$.args);
-	var filter =null;
+	var movie = null;
+	var query = null;
+	db.get('c:' + $.chatId, function (err, doc) {if (doc && doc.query) query = doc.query})
 	if ($.args) {
-		$.sendMessage('Filter <b>' + $.args + '</b>', {parse_mode: 'HTML'});
-		filter = '(item)=>{return(item.video_info.info.startsWith(\''+$.args+'\'));}'
+		movie = $.args.toLowerCase();
 		db.save('c:' + $.chatId, {
-			filter: filter
+			query: query,
+			movie: movie,
+			skip: 0 //start search from beginning if filter was changed
 		}, function (err, res) {
 			if (err) {
 				console.error('error Save Chat', err);
 			} else {
-				console.log('OK Save Chat', res);
+				$.sendMessage('Only movie included <b>' + $.args + '</b>', {parse_mode: 'HTML'});
 			}
 		})
 	} else {
-		$.sendMessage('Filter Off');
 		db.save('c:' + $.chatId, {
-			filter: filter
+			query: query,
+			movie: movie,
+			skip: 0
 		}, function (err, res) {
 			if (err) {
 				console.error('error Save Chat', err);
 			} else {
-				console.log('OK Save Chat', res);
+				$.sendMessage('Search all movies');
 			}
 		})
 	}
@@ -73,36 +79,77 @@ tg.controller('FilterController', ($) => {
 
 tg.controller('WordsController', ($) => {
 	if ($.args) {
-		//normalize query string
-		var query_norm = $.args.replace('_', ' ').replace('/', '');
-		$.sendMessage('Now seeking <b>' + query_norm + '</b> …', {parse_mode: 'HTML'}, (answer, err) => {
-			if (!err) {
-				console.log('answer', answer);
-				startSearch($.chatId, answer.result, query_norm);
-			} else {
-				console.error('error Send Message', err);
+		var query = $.args;
+		var movie = null;
+		db.get('c:' + $.chatId, function (err, doc) {
+			if (doc && doc.movie) {
+				movie = doc.movie
 			}
-		});
+			db.save('c:' + $.chatId, {
+				query: query,
+				movie: movie,
+				skip: 0 //start search from beginning if query was changed
+			}, function (err, res) {
+				if (err) {
+					console.error('error Save Chat', err);
+				} else {
+					var mes = movie ? '\nIn Movies <b>*' + movie + '*</b>':'';
+					$.sendMessage('Now seeking <b>' + query + '</b> …' + mes, {parse_mode: 'HTML'}, (answer, err) => {
+						if (!err) {
+							startSearch($.chatId, answer.result);
+						} else {
+							console.error('error Send Message', err);
+						}
+					});
+				}
+			})
+		})
 	} else {
 		$.sendMessage('Nothing to seek!');
 	}
 })
 
 tg.callbackQueries((callback_data) => {
-	console.log(callback_data);
-	console.log('**********',callback_data.message.entities)
 	var chat_id = callback_data.message.chat.id;
-	//normalize query string
-	var query_norm = callback_data.data.replace('_', ' ').replace('/', '');
-	tg.sendMessage(chat_id, 'Now seeking <b>' + query_norm + '</b> ...', {parse_mode: 'HTML'}, (answer, err) => {
-		if (!err) {
-			//console.log('answer', answer);
-			startSearch(chat_id, answer.result, query_norm);
-		} else {
-			console.error('error Send Message', err);
+	var skip = 0;
+	var query = null;
+	var data = callback_data.data;
+	if (data.startsWith('/skip:')) {
+		skip = + data.split(':')[1]
+	} else {
+		query = callback_data.data;
+	}
+	var movie = null;
+	db.get('c:' + chat_id, function (err, doc) {
+		if (doc && doc.movie) {
+			movie = doc.movie
 		}
-	});
-
+		if (!query && doc && doc.query) {
+			query = doc.query
+		}
+		if (query) {
+			db.save('c:' + chat_id, {
+				query: query,
+				movie: movie,
+				skip: skip
+			}, function (err, res) {
+				if (err) {
+					console.error('error Save Chat', err);
+				} else {
+					var mes = movie ? '\nIn Movies <b>*' + movie + '*</b>':'';
+					tg.sendMessage(chat_id,'Now seeking <b>' + query + '</b> …' + mes, {parse_mode: 'HTML'}, (answer, err) => {
+						if (!err) {
+							startSearch(chat_id, answer.result);
+						} else {
+							console.error('error Send Message', err);
+						}
+					});
+				}
+			})
+		} else {
+			console.error('No Query');
+		}
+	})
 })
 //inlineMode
 /*tg.inlineMode(($) => {
@@ -116,20 +163,19 @@ tg.callbackQueries((callback_data) => {
  }])
  })*/
 
-var startSearch = (chat_id, sent_message, queryString)=> {
-	//console.log(filter);
-	//var filtered = [];
-	var queue = new Queue(chat_id);
-	var filter = null;
+var startSearch = (chat_id, sent_message)=> {
 	db.get('c:' + chat_id, function (err, doc) {
 		if (doc) {
-			console.log('doc.filter',doc.filter);
-			filter = eval(doc.filter);
-			console.log('typeof filter',typeof filter);
-			console.log('filter',filter);
+			var queue = new Queue(chat_id);
+			var queryString = doc.query;
+			var filter = doc.movie ? (item)=>{return(item.video_info.info.toLowerCase().includes(doc.movie))} : null;
+			var skip = doc.skip ? doc.skip : 0;
+			seekPhrase(chat_id, sent_message, queryString, skip, 5, queue, filter);
+		} else {
+			console.error('error Find Chat in DB', err);
 		}
 	})
-	seekPhrase(chat_id, sent_message, queryString, 0, 5, queue, filter);
+
 };
 
 /**
@@ -157,7 +203,7 @@ var seekPhrase = (chat_id, sent_message, queryString, skip, need, queue, filter)
 		function (body, response, err) {
 			if (!err && response.statusCode == 200) {
 				if (body.phrases && body.phrases[0]) {
-					body.phrases.forEach(function (item, i, arr) {
+					body.phrases.some(function (item, i, arr) {
 						processed += 1;
 						if (!filter || filter(item)) {
 							//enqueue video
@@ -171,6 +217,7 @@ var seekPhrase = (chat_id, sent_message, queryString, skip, need, queue, filter)
 									movie: item.movie,
 									position: processed
 								});
+								return false;//continue
 							} else {
 								//enqueue button and finish
 								queue.enqueue({
@@ -178,9 +225,9 @@ var seekPhrase = (chat_id, sent_message, queryString, skip, need, queue, filter)
 									position: processed,
 									text:'Search <b>'+queryString+'</b> paused',
 									button_text:'Continue to get more',
-									data:'' + (processed-1)
+									data:'/skip:' + (processed-1)
 								});
-								return;
+								return true;//break
 							}
 						}
 					});
@@ -212,7 +259,7 @@ var seekPhrase = (chat_id, sent_message, queryString, skip, need, queue, filter)
 					}
 				}
 			} else {
-				console.log('API error' + (response ? response.statusCode : '') + '\n' + err);
+				console.error('API error' + (response ? response.statusCode : '') + '\n' + err);
 			}
 		})
 };
