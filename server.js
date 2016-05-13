@@ -189,7 +189,7 @@ var startSearch = (chat_id, sent_message)=> {
  */
 var seekPhrase = (chat_id, sent_message, queryString, skip, need, queue, filter)=> {
 	var processed = skip;
-	//console.log('skip',skip);
+	console.log('++++++++++++++++++++++++++++++', queryString, skip, need, queue, filter);
 	//query server
 	req.get({
 			url: 'http://playphrase.me/search',
@@ -204,6 +204,7 @@ var seekPhrase = (chat_id, sent_message, queryString, skip, need, queue, filter)
 			if (!err && response.statusCode == 200) {
 				if (body.phrases && body.phrases[0]) {
 					body.phrases.some(function (item, i, arr) {
+						console.log('------------------------------', item.text,item.video_info.info);
 						processed += 1;
 						if (!filter || filter(item)) {
 							//enqueue video
@@ -222,10 +223,15 @@ var seekPhrase = (chat_id, sent_message, queryString, skip, need, queue, filter)
 								//enqueue button and finish
 								queue.enqueue({
 									type: 'button',
+									button: JSON.stringify({
+										inline_keyboard:
+											[[{
+												text: 'Continue to get more',
+												callback_data: '/skip:' + (processed-1)
+											}]]
+									}),
 									position: processed,
-									text:'Search <b>'+queryString+'</b> paused',
-									button_text:'Continue to get more',
-									data:'/skip:' + (processed-1)
+									text:'Search <b>'+queryString+'</b> paused'
 								});
 								return true;//break
 							}
@@ -254,8 +260,13 @@ var seekPhrase = (chat_id, sent_message, queryString, skip, need, queue, filter)
 								});
 							});
 							options.reply_markup = JSON.stringify({inline_keyboard: keyboard});
-							tg.editMessageText('Now seeking <b>' + queryString + '</b> …\n' + mes, options);
 						}
+						tg.editMessageText('Now seeking <b>' + queryString + '</b> …\n' + mes, options);
+					} else {
+						queue.enqueue({
+							type: 'message',
+							text:'Search <b>'+queryString+'</b> finished'
+						});
 					}
 				}
 			} else {

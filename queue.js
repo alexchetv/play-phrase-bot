@@ -94,7 +94,6 @@ class Queue {
 		_showElement(element) {
 			var self=this;
 			if (element.type=='video') {
-
 				db.get('p:' + element._id, function (err, doc) {
 					if (doc && doc.text && doc.info && doc.imdb && doc._attachments && doc._attachments.video && doc._attachments.video.stub) {
 						//phrase and video already saved in DB
@@ -137,21 +136,11 @@ class Queue {
 				tg.sendMessage(this.chat_id,element.text,
 					{
 						parse_mode: 'HTML',
-						reply_markup:JSON.stringify({
-							inline_keyboard:
-								[[{
-									text: element.button_text,
-									callback_data: element.data
-								}]]
-
-						})
+						reply_markup:element.button
 					}
 				);
 			}
-
-
 		}
-
 }
 
 module.exports = Queue;
