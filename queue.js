@@ -8,7 +8,6 @@ var request = require('request');
 
 class Queue {
 	constructor(chat_id) {
-		console.log('Queue',chat_id);
 		this.chat_id = chat_id;
 		this.content = [];
 		this.enqueued = 0;
@@ -22,7 +21,6 @@ class Queue {
 	}
 
 	_sendVideoFromAttach(element,tfid) {
-		console.log(element,tfid);
 		var options = {
 			caption: ellipsize(element.caption, 200, {ellipse: ' …'}),
 			reply_markup: JSON.stringify({
@@ -130,15 +128,8 @@ class Queue {
 						});
 					}
 				});
-
-
 			} else {//type="button"
-				tg.sendMessage(this.chat_id,element.text,
-					{
-						parse_mode: 'HTML',
-						reply_markup:element.button
-					}
-				);
+				tg.sendMessage(this.chat_id,element.text,element.options);
 			}
 		}
 }
