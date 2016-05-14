@@ -30,41 +30,29 @@ tg.router.
 	when(['/start', '/Start'], 'StartController').
 	when(['/movie', '/Movie', '/m', '/M'], 'FilterController').
 	when(['/all', '/All'], 'AllController').
-	when(['/_'], 'WordsController').
+	when(['/s', '/S',], 'StopController').
+	when(['/p', '/P','/Pause','/pause'], 'PauseController').
 	otherwise('WordsController')
 
 tg.controller('StartController', ($) => {
-	$.sendMessage('Send me any text to find phrase from movie.\nTo filter results by movie name send /movie <b>part of the name</b>\nTo take this filter off just send /all', {parse_mode: 'HTML'});
+	$.sendMessage('Send me any text to find containing it phrase from movie.\nTo filter results by movie name send /movie <b>part of the name</b>\nTo take this filter off just send /all', {parse_mode: 'HTML'});
+})
+
+tg.controller('StopController', ($) => {
+	$.sendMessage('StopController');
+})
+
+tg.controller('PauseController', ($) => {
+	$.sendMessage('PauseController');
 })
 
 tg.controller('AllController', ($) => {
-	$.args = null;
-	$.routeTo('/movie');
-})
-
-tg.controller('FilterController', ($) => {
-	var movie = null;
 	var query = null;
 	db.get('c:' + $.chatId, function (err, doc) {
-		if (doc && doc.query) query = doc.query
-	})
-	if ($.args) {
-		movie = $.args.toLowerCase();
+		if (doc && doc.query) query = doc.query;
 		db.save('c:' + $.chatId, {
 			query: query,
-			movie: movie,
-			skip: 0 //start search from beginning if filter was changed
-		}, function (err, res) {
-			if (err) {
-				console.error('error Save Chat', err);
-			} else {
-				$.sendMessage('Only movie included <b>' + $.args + '</b>', {parse_mode: 'HTML'});
-			}
-		})
-	} else {
-		db.save('c:' + $.chatId, {
-			query: query,
-			movie: movie,
+			movie: null,
 			skip: 0
 		}, function (err, res) {
 			if (err) {
@@ -73,7 +61,39 @@ tg.controller('FilterController', ($) => {
 				$.sendMessage('Search all movies');
 			}
 		})
-	}
+	})
+})
+
+tg.controller('FilterController', ($) => {
+	//console.log('*'+$.args+'*');
+	var movie = null;
+	var query = null;
+	db.get('c:' + $.chatId, function (err, doc) {
+		if (doc && doc.query) {
+			query = doc.query;
+			movie = doc.movie;
+		}
+		if ($.args) {
+			movie = $.args.toLowerCase();
+			db.save('c:' + $.chatId, {
+				query: query,
+				movie: movie,
+				skip: 0 //start search from beginning if filter was changed
+			}, function (err, res) {
+				if (err) {
+					console.error('error Save Chat', err);
+				} else {
+					$.sendMessage('Only movie containing <b>' + movie + '</b>', {parse_mode: 'HTML'});
+				}
+			})
+		} else {
+			if (movie) {
+				$.sendMessage('Only movie containing <b>' + movie + '</b>', {parse_mode: 'HTML'});
+			} else {
+				$.sendMessage('Search all movies');
+			}
+		}
+	})
 })
 
 
@@ -96,7 +116,7 @@ tg.controller('WordsController', ($) => {
 					var mes = movie ? '\nIn <b>*' + movie + '*</b>' : '';
 					$.sendMessage('Now seeking <b>' + query + '</b> …' + mes, {parse_mode: 'HTML'}, (answer, err) => {
 						if (!err) {
-							startSearch($.chatId, answer.result,0,0);//start search from beginning if query was changed
+							startSearch($.chatId, answer.result, 0, 0);//start search from beginning if query was changed
 						} else {
 							console.error('error Send Message', err);
 						}
@@ -173,15 +193,14 @@ var startSearch = (chat_id, sent_message, skip, count)=> {
 			var queue = new Queue(chat_id);
 			var queryString = doc.query;
 			var filter = doc.movie ? (item)=> {
-				return (item.video_info.info.toLowerCase().includes(doc.movie))
+				return (item.video_info.info.split('/')[0].toLowerCase().includes(doc.movie))
 			} : null;
 			//var skip = doc.skip ? doc.skip : 0;
-			seekPhrase(chat_id, sent_message, queryString, skip, 5, queue, count, filter);
+			seekPhrase(chat_id, sent_message, queryString, skip, 5, queue, count, filter, doc.movie);
 		} else {
 			console.error('error Find Chat in DB', err);
 		}
 	})
-
 };
 
 /**
@@ -193,7 +212,7 @@ var startSearch = (chat_id, sent_message, skip, count)=> {
  * @param skip
  * @param need length of  resulting filtered array enough to stop seeking
  */
-var seekPhrase = (chat_id, sent_message, queryString, skip, need, queue, count, filter)=> {
+var seekPhrase = (chat_id, sent_message, queryString, skip, need, queue, count, filter, movie)=> {
 	var processed = skip;
 	console.log('+++++++++++++++++++++++++++++seekPhrase+', queryString, skip, need);
 	//query server
@@ -214,8 +233,13 @@ var seekPhrase = (chat_id, sent_message, queryString, skip, need, queue, count, 
 						message_id: sent_message.message_id,
 						parse_mode: 'HTML'
 					}
-					var mes = 'Found '+ body.count;
-					tg.editMessageText('Now seeking <b>' + queryString + '</b> …\n' + mes, options);
+					var mes = 'Now seeking <b>' + queryString + '</b> …';
+					if (filter) {
+						mes += '\nIn <b>*' + movie + '*</b>\nFound ' + body.count + ' (without filter)'
+					} else {
+						mes += '\nFound ' + body.count;
+					}
+					tg.editMessageText(mes, options);
 					body.phrases.some(function (item, i, arr) {
 						console.log('------------------------------', item.text, item.video_info.info);
 						processed += 1;
@@ -241,13 +265,13 @@ var seekPhrase = (chat_id, sent_message, queryString, skip, need, queue, count, 
 										parse_mode: 'HTML',
 										reply_markup: JSON.stringify({
 											inline_keyboard: [[{
-												text: 'Continue to get more',
-												callback_data: '/skip:' + (processed - 1)+':'+count
+												text: 'Get more',
+												callback_data: '/skip:' + (processed - 1) + ':' + count
 											}]]
 										})
 									},
 									position: processed,
-									text: 'Search <b>' + queryString + '</b> paused after '+ count + ' results'
+									text: 'Search <b>' + queryString + '</b> paused after ' + count + ' results'
 								});
 								return true;//break
 							}
@@ -255,7 +279,7 @@ var seekPhrase = (chat_id, sent_message, queryString, skip, need, queue, count, 
 					});
 					//continue search
 					if (queue.enqueued <= need) {
-						seekPhrase(chat_id, sent_message, queryString, processed, need, queue, count, filter);
+						seekPhrase(chat_id, sent_message, queryString, processed, need, queue, count, filter, movie);
 					}
 				} else {
 					console.log('//no more phrases');
@@ -283,7 +307,7 @@ var seekPhrase = (chat_id, sent_message, queryString, skip, need, queue, count, 
 					} else {
 						queue.enqueue({
 							type: 'message',
-							text: 'Search <b>' + queryString + '</b> finished with '+ count +' results',
+							text: 'Search <b>' + queryString + '</b> finished with ' + count + ' results',
 							options: {
 								parse_mode: 'HTML'
 							},
