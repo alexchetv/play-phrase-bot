@@ -7,6 +7,8 @@ var cradle = require('cradle');
 var db = new (cradle.Connection)().database('telegram');
 const Queue = require('./queue.js');
 
+var pauseFlags = {};
+
 db.exists(function (err, exists) {
 	if (err) {
 		console.error('Database Error', err);
@@ -35,15 +37,15 @@ tg.router.
 	otherwise('WordsController')
 
 tg.controller('StartController', ($) => {
-	$.sendMessage('Send me any text to find containing it phrase from movie.\nTo filter results by movie name send /movie <b>part of the name</b>\nTo take this filter off just send /all', {parse_mode: 'HTML'});
+	$.sendMessage('Send me any text to find containing it phrase from movie.\nTo filter results by movie title send /movie (or /m) <b>part of the title</b>\nTo take this filter off just send /all', {parse_mode: 'HTML'});
 })
 
 tg.controller('ResumeController', ($) => {
-	$.sendMessage('ResumeController');
+	startSearch($.chatId);
 })
 
 tg.controller('PauseController', ($) => {
-	$.sendMessage('PauseController');
+	pauseFlags[$.chatId] = true;
 })
 
 tg.controller('AllController', ($) => {
@@ -78,7 +80,8 @@ tg.controller('FilterController', ($) => {
 			db.save('c:' + $.chatId, {
 				query: query,
 				movie: movie,
-				skip: 0 //start search from beginning if filter was changed
+				skip: 0, //start search from beginning if filter was changed
+				count: 0
 			}, function (err, res) {
 				if (err) {
 					console.error('error Save Chat', err);
@@ -168,6 +171,7 @@ var startSearch = (chat_id)=> {
 			var filter = movie ? (item)=> {
 				return (item.video_info.info.split('/')[0].toLowerCase().includes(movie))
 			} : null;
+			pauseFlags[chat_id] = false;
 			searchLoop(chat_id, 'start', query, skip, 10, queue, count, filter, movie);
 		} else {
 			console.error('error Get search condition from DB', err);
@@ -190,7 +194,6 @@ var searchLoop = (chat_id, mode, query, skip, need, queue, count, filter, movie)
 	};
 	var modeMes = (mode == 'start') ? 'Now ' : 'Continue ';
 	var movieMes = movie ? ' In <b>*' + movie + '*</b>' : '';
-	console.log('++++++++', mode, query, movieMes, skip, count, queue.enqueuedResults);
 	//query resuts from playphrase.me API
 	req.get({
 			url: 'http://playphrase.me/search',
@@ -230,60 +233,75 @@ var searchLoop = (chat_id, mode, query, skip, need, queue, count, filter, movie)
 								position: processed
 							});
 						}
-						return queue.enqueuedResults < need; //break if enqueuedResults = need
+						return !pauseFlags[chat_id] && queue.enqueuedResults < need; //break if enqueuedResults >= need
 					});
-					if (queue.enqueuedResults < need) {
+					if (!pauseFlags[chat_id] && queue.enqueuedResults < need) {
 						searchLoop(chat_id, 'loop', query, processed, need, queue, count, filter, movie);//continue search
 					} else {
-						queue.enqueue({  //enqueue message and stop
-							type: 'message',
-							options: {
-								parse_mode: 'HTML',
-								reply_markup: JSON.stringify({
-									resize_keyboard: true,
-									selective: true,
-									keyboard: [[{
-										text: '\u25B6 Resume'
-									}]]
-								})
-							},
-							position: processed,
-							text: 'Search <b>' + query + '</b> paused after ' + count + ' results'
+						db.save('c:' + chat_id, { //save all
+							query: query,
+							movie: movie,
+							skip: processed,
+							count: count
+						}, function (err, res) {
+							if (err) {
+								console.error('error Save search condition', err);
+							} else {
+								queue.enqueue({  //enqueue message and stop
+									type: 'message',
+									options: {
+										parse_mode: 'HTML',
+										reply_markup: JSON.stringify({
+											resize_keyboard: true,
+											selective: true,
+											keyboard: [[{
+												text: '\u25B6 Resume'
+											}]]
+										})
+									},
+									position: processed,
+									text: 'Search <b>' + query + '</b> paused after ' + count + ' results'
+								});
+							}
 						});
 					}
-				} else {
-					console.log('//no more phrases');
+				} else {//no results
 					if (mode == 'start') { //nothing at all! so show Message "Not Found"
 						mes = modeMes + 'seeking <b>' + query + '</b> …' + movieMes + '\nNot Found.';
-						var keyboard = [[]];
-						if (body.suggestions && body.suggestions[0]) {
-							mes += '\nDid you mean:';
-							body.suggestions.forEach(function (item, i, arr) {
-								keyboard[0].push({
-									text: item.text,
-									callback_data: item.text
-								});
-							});
-							options = {
-								parse_mode: 'HTML',
-								reply_markup: JSON.stringify({inline_keyboard: keyboard})
-							}
-						}
 					} else {
 						mes = 'Search <b>' + query + '</b> finished with ' + count + ' results';
-						options = {
-							parse_mode: 'HTML',
-							reply_markup: JSON.stringify({hide_keyboard: true, selective: true})//hide button Pause
-						}
+					}
+					options = {
+						parse_mode: 'HTML',
+						reply_markup: JSON.stringify({hide_keyboard: true, selective: true})//hide button Pause
 					}
 					queue.enqueue({
 						type: 'message',
 						text: mes,
 						options: options
 					});
+					if (body.suggestions && body.suggestions[0]) {
+						var keyboard = [[]];
+						body.suggestions.forEach(function (item, i, arr) {
+							keyboard[0].push({
+								text: item.text,
+								callback_data: item.text
+							});
+						});
+						queue.enqueue({
+							type: 'message',
+							text: 'Did you mean:',
+							options: {
+								parse_mode: 'HTML',
+								reply_markup: JSON.stringify({inline_keyboard: keyboard})
+							}
+						});
+					}
 				}
 			} else {
 				console.error('playphrase.me API error' + (response ? response.statusCode : '') + '\n' + err);
 			}
 		})
 };
+
+
