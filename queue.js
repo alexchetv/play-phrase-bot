@@ -10,13 +10,13 @@ class Queue {
 	constructor(chat_id) {
 		this.chat_id = chat_id;
 		this.content = [];
-		this.enqueued = 0;
+		this.enqueuedResults = 0;
 		this.busy = false;
 	}
 
 	enqueue(item) {
 		this.content.push(item);
-		this.enqueued++;
+		if (item.type =='result') this.enqueuedResults++;//count only results
 		this._work();
 	}
 
@@ -91,7 +91,7 @@ class Queue {
 
 		_showElement(element) {
 			var self=this;
-			if (element.type=='video') {
+			if (element.type=='result') {
 				db.get('p:' + element._id, function (err, doc) {
 					if (doc && doc.text && doc.info && doc.imdb && doc._attachments && doc._attachments.video && doc._attachments.video.stub) {
 						//phrase and video already saved in DB
@@ -128,8 +128,8 @@ class Queue {
 						});
 					}
 				});
-			} else {//type="button"
-				tg.sendMessage(this.chat_id,element.text,element.options);
+			} else {//type="message"
+				tg.sendMessage(this.chat_id,element.text,element.options,() => {this.busy = false;});
 			}
 		}
 }
