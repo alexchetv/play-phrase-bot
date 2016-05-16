@@ -22,6 +22,7 @@ class Queue {
 
 
 	_sendVideoFromAttach(element, tfid) {
+		var self = this;
 		var options = {
 			caption: ellipsize(element.caption, 190, {ellipse: ' …'}),
 			reply_markup: JSON.stringify({
@@ -39,13 +40,13 @@ class Queue {
 						if (err) {
 							console.error('error Delete TFID', err);
 						} else {
-							this.busy = false;
-							this._work();
+							self.busy = false;
+							self._work();
 						}
 					});
 				} else {
-					this.busy = false;
-					this._work();
+					self.busy = false;
+					self._work();
 				}
 			})
 		} else {
@@ -102,7 +103,7 @@ class Queue {
 					//not saved yet
 					var writeToAttachStream;
 					//save phrase
-					db.save('p:' + element._id, {
+					db.save('p:' + element._id, doc && doc._rev, {
 						text: element.caption,
 						info: element.info,
 						imdb: element.imdb,
