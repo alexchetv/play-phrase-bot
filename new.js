@@ -4,11 +4,10 @@
 'use strict'
 
 const secret = require('./secret');
-//var tg = require('telegram-node-bot')(secret.token);
 //var req = require('tiny_request');
-//var cradle = require('cradle');
-//var db = new (cradle.Connection)().database('telegram');
-//const Queue = require('./queue.js');
+var cradle = require('cradle');
+var db = new (cradle.Connection)().database('telegram');
+const Queue = require('./queue.js');
 var telegram = require('telegram-bot-api');
 
 var api = new telegram({

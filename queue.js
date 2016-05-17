@@ -1,10 +1,17 @@
 const secret = require('./secret');
 const fs = require('fs');
-var tg = require('telegram-node-bot')(secret.token);
 var cradle = require('cradle');
 var db = new (cradle.Connection)().database('telegram');
 var ellipsize = require('ellipsize');
 var request = require('request');
+var telegram = require('telegram-bot-api');
+
+var api = new telegram({
+	token: secret.token,
+	updates: {
+		enabled: true
+	}
+});
 
 class Queue {
 	constructor(chat_id) {
