@@ -6,8 +6,7 @@
   "dependencies": {
     "cradle": "^0.7.1",
     "ellipsize": "0.0.2",
-    "telegram-bot-api": "^1.1.0",
-    "telegram-node-bot": "^2.1.2"
+    "telegram-bot-api": "^1.1.0"
   },
   "devDependencies": {},
   "scripts": {

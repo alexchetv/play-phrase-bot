@@ -8,6 +8,7 @@ const secret = require('./secret');
 var cradle = require('cradle');
 var db = new (cradle.Connection)().database('telegram');
 const Queue = require('./queue.js');
+const Search = require('./search.js');
 var telegram = require('telegram-bot-api');
 
 var api = new telegram({
@@ -26,6 +27,18 @@ api.on('message', function (message) {
 			text: 'Send me any text to find containing it phrase from movie.\nTo filter results by movie title send /movie (or /m) <b>part of the title</b>\nTo take this filter off just send /all',
 			parse_mode: 'HTML'
 		})
-	}
+		return;
+	} else {
+        var search = new Search(message.text);
+        search.init()
+            .then((res)=> {
+                console.log('ok===================',res);
+            })
+            .catch((err)=> {
+                console.log('er2', err);
+            });
+        return;
+    }
+
 	
 });
