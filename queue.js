@@ -4,12 +4,14 @@ var cradle = require('cradle');
 var db = new (cradle.Connection)().database('telegram');
 var ellipsize = require('ellipsize');
 var request = require('request');
-var telegram = require('telegram-bot-api');
+const TeleBot  = require('telebot');
 
-var api = new telegram({
+const bot = new TeleBot({
 	token: secret.token,
-	updates: {
-		enabled: true
+	pooling: {
+		interval: 1000,
+		timeout: 0,
+		retryTimeout: 100
 	}
 });
 
