@@ -46,7 +46,7 @@ bot.on(['/movie', '/m'], msg => {
 			} else {
 				txt = `Currently the filter by movie title is <b>${doc.movie}</b>`;
 				keyboard[0].push(bot.inlineButton(
-					`\u{2716} no filter`,
+					`\u{274C} no filter`,
 					{callback: `movie:off`}
 				))
 			}
@@ -121,15 +121,17 @@ bot.on('callbackQuery', (msg) => {
 				bot.sendMessage(chat_id, 'Type part of movie title', {parse, markup});
 			}
 				break;
-			default:
+			default://select from recent
 			{
-				let n = Number(choice);
-				if (n) {setMovieFilter(chat_id,n);
-
-				}
+				setMovieFilter(chat_id, Number(choice));
 			}
 
 		}
+	}
+	if (cmd == 'phrase:next') {
+		bot.answerCallback(msg.id);
+		bot.editMarkup({chatId: chat_id, messageId: bot_msg.message_id}, {markup: null});
+		processPhrase(chat_id);
 	}
 });
 
@@ -171,17 +173,17 @@ var setMovieFilter = (chat_id, new_filter) => {
 var startSearch = (chat_id, norm_text) => {
 	let first_msg, movie, movieMes;
 	store.get('u', chat_id)
-		.then((doc) => {
+		.then((doc) => {//got movie filter
 			movie = doc && doc.movie;
 			movieMes = movie ? ' in <b>*' + movie + '*</b>' : '';
 			searches[chat_id] = new Search(norm_text, movie);
 			return bot.sendMessage(chat_id, 'Now seeking <b>' + norm_text + '</b> ' + movieMes, {parse})
 		})
-		.then((result) => {
+		.then((result) => {//got shown first message
 			first_msg = result.result;
 			return searches[chat_id].init();
 		})
-		.then((res)=> {
+		.then((res)=> {//got phrase count and suggestions if any
 			console.log(res.id);
 			if (res.count == 0) {
 				var txt = `Now seeking <b>${norm_text}</b> ${movieMes}\nNot Found.`;
@@ -197,22 +199,79 @@ var startSearch = (chat_id, norm_text) => {
 					});
 					markup = bot.inlineKeyboard(keyboard);
 				}
-				bot.editText(
+				return bot.editText(
 					{chatId: chat_id, messageId: first_msg.message_id},
 					txt,
 					{markup, parse}
 				);
 			} else {
-				bot.editText(
+				return bot.editText(
 					{chatId: chat_id, messageId: first_msg.message_id},
 					`Now seeking <b>${norm_text}</b> ${movieMes}\nFound ${res.count}${movie ? ' (without filter)' : ''}`,
 					{parse}
 				);
-
 			}
-		}).catch(err => {
+		})
+		.then(() => {//got edited first message
+			processPhrase(chat_id);
+		})
+		.catch(err => {
 			console.log('ERROR', err);
 			bot.sendMessage(chat_id,
 				'We have some problem. Please repeat.')
 		});
 }
+	//processPhrase*****************************************************************************************
+	var processPhrase = (chat_id) => {
+		searches[chat_id].getPhrase()
+			.then((phrase) => {
+				console.log('phrase **************************', phrase)
+				if (phrase) {
+					if (phrase.hasNext) {
+						showPhrase(chat_id,phrase);// that's all
+					} else {
+						Promise.all([showPhrase(chat_id, phrase), searches[chat_id].getNext()]).then((values) => {
+							console.log('values-----------------------------------', values);
+							if (values[1]) { //hasNext == true
+								addButton(chat_id,values[0].result.message_id)
+							} else {//hasNext == false
+								bot.sendMessage(chat_id,
+									'The search was completed. No more phrases.')
+							}
+						});
+					}
+				} else {
+					bot.sendMessage(chat_id,
+						'The filter was applied. No phrases after that.')
+				}
+			})
+	}
+	var showPhrase = (chat_id,phrase) => {
+		let keyboard, markup;
+		if (phrase.hasNext) {
+			keyboard = [[
+				bot.inlineButton(
+					`\u{2795} Get Next Phrase`,
+					{callback: `phrase:next`}
+				)
+			]];
+			markup = bot.inlineKeyboard(keyboard);
+		}
+		let txt = phrase.caption;
+		return bot.sendMessage(chat_id, txt, {parse, markup});
+	}
+
+	var addButton = (chat_id,message_id) => {
+		let keyboard = [[
+			bot.inlineButton(
+				`\u{2795} Get Next Phrase`,
+				{callback: `phrase:next`}
+			)
+		]];
+		let markup = bot.inlineKeyboard(keyboard);
+		bot.editMarkup({chatId: chat_id, messageId: message_id}, {parse, markup})
+			.then(() => {
+				return phrase.hasNext
+			});
+	}
+
