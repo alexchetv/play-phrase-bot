@@ -1,19 +1,23 @@
 "use strict";
 const EventEmitter = require('events');
 const rp = require('request-promise');
+var request = require('request');
 const Buffer = require('./buffer.js');
+const Store = require('./store');
 const MIN_BUFFER = 10;
 
 class Search extends EventEmitter {
 	constructor(query, movie) {
 		super();
+		this.store = new Store('telegram');
 		this.query = query;
 		this.movie = movie;
 		this.buffer = new Buffer();
 		this.filling = false; //flag
+		this.loading = false; //flag
 		this.total = 0;
 		this.skip = 0;
-		this.ended = false;
+		this.ended = false; //flag
 		const ALPHABET = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
 		const ID_LENGTH = 16;
 		let generate = () => {
@@ -26,7 +30,10 @@ class Search extends EventEmitter {
 		this.id = generate();
 		this.filter = this.movie ? (item) => {
 			return (item.video_info.info.split('/')[0].toLowerCase().includes(this.movie))
-		} : null
+		} : null;
+		this.on('add', () => {
+			this.startLoadVideo();
+		});
 	}
 
 	init() {
@@ -40,14 +47,11 @@ class Search extends EventEmitter {
 				}
 			})
 				.then((res)=> {
-					//console.log(res);
 					if (res.result == 'OK') {
 						this.fillBuffer(res.phrases);
-						//console.log('buffer+++++++++++++++++++++',this.buffer);
 						resolve({
 							count: res.count,
-							suggestions: res.suggestions,
-							id: this.id
+							suggestions: res.suggestions
 						});
 					} else {
 						throw res;
@@ -75,7 +79,8 @@ class Search extends EventEmitter {
 							info: item.video_info.info,
 							imdb: item.video_info.imdb,
 							movie: item.movie,
-							number: this.total
+							number: this.total,
+							loaded: false
 						}
 					)
 					this.total++;
@@ -99,15 +104,12 @@ class Search extends EventEmitter {
 			}
 		})
 			.then((res)=> {
-				//console.log(res);
 				if (res.result == 'OK') {
 					if (res.phrases.length == 0) {
 						this.ended = true;
 						this.emit('end');
-						console.log('ended--------------------------------------');
 					} else {
 						this.fillBuffer(res.phrases);
-						//console.log('buffer**********************************',this.buffer);
 					}
 				} else {
 					throw res;
@@ -125,11 +127,11 @@ class Search extends EventEmitter {
 	getPhrase() {
 		if (!this.filling) this.fillBuffer();
 		return new Promise((resolve, reject) => {
-			if (this.buffer.size > 0) {
+			if (this.buffer.size > 0 && this.buffer.peek().loaded) {
 				resolve(this.buffer.dequeue());
 			} else {
-				this.once('add', () => {
-					console.log('add************************************');
+				this.once('ready', () => {
+					console.log('ready************************************');
 					resolve(this.buffer.dequeue());
 				});
 				this.once('end', () => {
@@ -152,16 +154,82 @@ class Search extends EventEmitter {
 					resolve(false);
 				} else { //wait
 					this.once('add', () => {
-						console.log('add++++++++++++++++++++++++++++++++');
 						resolve(true);
 					});
 					this.once('end', () => {
-						console.log('end++++++++++++++++++++++++++++++++');
 						resolve(false);
 					});
 				}
 			}
 		})
 	}
+
+//startLoadVideo********************************************************************
+	startLoadVideo() {
+		if (this.loading) return;
+		this.loading = true;
+		this._load(0);
+	}
+
+//_load********************************************************************
+	_load(i) {
+		if (i >= this.buffer.size) {
+			this.loading = false;
+		} else {
+			let item = this.buffer.item(i);
+			if (item.loaded) {
+				this._load(++i);
+			} else {
+				this.store.get('p', item._id)
+
+					.then((doc)=> {
+						if (doc && doc._attachments && doc._attachments.video && doc._attachments.video.stub && (doc._attachments.video.length > 0)) {//video already saved in DB
+							item.loaded = true;
+							item.tfid = doc.tfid; //may be null
+							if (i == 0) this.emit('ready');
+							this._load(++i);
+						} else {//not saved yet
+
+
+							var writeToAttachStream;
+							//save phrase
+							this.store.save('p', item._id, {
+								text: item.caption,
+								info: item.info,
+								imdb: item.imdb,
+								movie: item.movie
+							})
+								.then((res) => {
+									//and save video as attachment
+									var attachmentData = {
+										name: 'video',
+										'Content-Type': 'video/mp4'
+									}
+									var self = this;
+									writeToAttachStream = self.store.db.saveAttachment({id: res.id, rev: res.rev}, attachmentData,
+										function (err, res) {
+											if (err) {
+												console.error('error saveAttachment', err);
+											} else {
+												item.loaded = true;
+												if (i == 0) self.emit('ready');
+												self._load(++i);
+											}
+										}
+									)
+									request('http://playphrase.me/video/phrase/' + item._id + '.mp4').pipe(writeToAttachStream);
+								})
+								.catch((err)=> {
+									console.error('error Save PhraseToDB', err);
+								})
+						}
+					})
+					.catch((err)=> {
+						console.error('[error get from DB]', err);
+					})
+			}
+		}
+	}
+
 }
 module.exports = Search;

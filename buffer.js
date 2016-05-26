@@ -30,10 +30,9 @@ class Buffer {
 	get size() {
 		return this.data.length;
 	}
-	forEach(callback, thisArg) {
-		for (const item of this) {
-			callback.call(thisArg, item, this);
-		}
+
+	item(i) {
+		return this.data[i];
 	}
 }
 

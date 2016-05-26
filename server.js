@@ -1,307 +1,339 @@
-'use strict'
+'use strict';
 
 const secret = require('./secret');
-var tg = require('telegram-node-bot')(secret.token);
-var req = require('tiny_request');
-var cradle = require('cradle');
-var db = new (cradle.Connection)().database('telegram');
-const Queue = require('./queue.js');
+const cradle = require('cradle');
+const ellipsize = require('ellipsize');
+const Store = require('./store');
+const fs = require('fs');
+var store = new Store('telegram');
+const Search = require('./search.js');
+const TeleBot = require('telebot');
+const bot = new TeleBot({
+	token: secret.token,
+	pooling: {
+		interval: 10,
+		timeout: 20,
+		retryTimeout: 10000
+	}
+});
+bot.username = secret.username;
+const parse = 'HTML';
+var searches = {};
 
-var pauseFlags = {};
+//start command *******************************************************************
+bot.on(['/start', '/s'], msg => {
+	bot.sendMessage(msg.from.id,
+		`Send me any text to find containing it phrase from movie.
+To filter results by movie title send /movie (or /m)`,
+		{parse});
+});
 
-db.exists(function (err, exists) {
-	if (err) {
-		console.error('Database Error', err);
-	} else if (exists) {
-		console.log('Database Connected.');
-		db.info(
-			function (err, info) {
-				if (err) {
-					console.error('Database Info Error', err);
-				} else {
-					//console.log(info);
+//set movie filter *******************************************************************
+bot.on(['/movie', '/m'], msg => {
+	store.get('u', msg.from.id)
+		.then(doc => {
+			let txt = '';
+			let keyboard = [[
+				bot.inlineButton(
+					`\u{2795} add new`,
+					{callback: `movie:new`}
+				)
+			]];
+			let startFrom = 1;
+			if (!doc || !doc.movie) {
+
+				txt = 'Currently the filter by movie title is DISABLED';
+				startFrom = 0;
+			} else {
+				txt = `Currently the filter by movie title is <b>${doc.movie}</b>`;
+				keyboard[0].push(bot.inlineButton(
+					`\u{274C} no filter`,
+					{callback: `movie:off`}
+				))
+			}
+			if (doc && doc.recent && (doc.recent.length > startFrom)) {
+				for (let i = startFrom; i < doc.recent.length; i++) {
+					keyboard.push([
+						bot.inlineButton(
+							doc.recent[i],
+							{callback: `movie:${i}`}
+						)
+					])
 				}
 			}
-		)
-	} else {
-		console.error('Database does not exists.');
+			let markup = bot.inlineKeyboard(keyboard);
+			bot.sendMessage(msg.from.id, txt, {parse, markup});
+		})
+		.catch(err => {
+			console.error('ERROR', err);
+			bot.sendMessage(msg.from.id,
+				`\u{2757}We have some problem. Please repeat.`, {parse})
+		})
+
+});
+
+//begin search *******************************************************************
+bot.on(['text'], (user_msg) => {
+	let chat_id = user_msg.from.id;
+	var norm_text = user_msg.text.toLowerCase();
+	if (user_msg.text.startsWith('/')) {
+		return;
+	}
+	if (user_msg.reply_to_message && user_msg.reply_to_message.from.username == bot.username) {
+		setMovieFilter(chat_id, norm_text);
+		return;
+	}
+
+	startSearch(chat_id, norm_text);
+
+});
+
+bot.on('callbackQuery', (msg) => {
+	console.log('callbackQuery',msg);
+	const chat_id = msg.from.id;
+	const cmd = msg.data;
+	const bot_msg = msg.message;
+	if (cmd.startsWith('/_')) {
+		bot.answerCallback(msg.id);
+		bot.editText({
+			chatId: chat_id,
+			messageId: bot_msg.message_id
+		}, bot_msg.text.replace(' Did you mean:', ''), {markup: null});
+		startSearch(chat_id, cmd.substring(2));
+	}
+	if (cmd.startsWith('movie:')) {
+		bot.answerCallback(msg.id);
+		bot.editMarkup({chatId: chat_id, messageId: bot_msg.message_id}, {markup: null});
+		let choice = cmd.substring(6);
+		switch (choice) {
+			case 'off':
+			{
+				store.update('u', chat_id, {movie: null})
+					.then(() => {
+						searches[chat_id] = null;//the search was destroyed
+						bot.sendMessage(chat_id, `\u{26A0}Now the filter by movie title is DISABLED`)
+					})
+			}
+				break;
+			case 'new':
+			{
+				let markup = 'reply';
+				bot.sendMessage(chat_id, 'Type part of movie title', {parse, markup});
+			}
+				break;
+			default://select from recent
+			{
+				setMovieFilter(chat_id, Number(choice));
+			}
+
+		}
+	}
+	if (cmd.startsWith('phrase:next')) {
+		bot.answerCallback(msg.id);
+		let search_id = cmd.split(':')[2];
+		let markup = null;
+		if (!processPhrase(chat_id, search_id)) {
+			markup = bot.inlineKeyboard([[
+				bot.inlineButton(
+					`\u{26A0}This search was terminated`,
+					{callback: 'nothing to do'})
+			]]);
+		}
+		bot.editMarkup({chatId: chat_id, messageId: bot_msg.message_id}, {markup});
 	}
 });
 
-tg.router.
-	when(['/start', '/Start'], 'StartController').
-	when(['/movie', '/Movie', '/m', '/M'], 'FilterController').
-	when(['/all', '/All'], 'AllController').
-	when(['\u25B6',], 'ResumeController').
-	when(['\u23F8'], 'PauseController').
-	otherwise('WordsController')
+bot.connect();
 
-tg.controller('StartController', ($) => {
-	$.sendMessage('Send me any text to find containing it phrase from movie.\nTo filter results by movie title send /movie (or /m) <b>part of the title</b>\nTo take this filter off just send /all', {parse_mode: 'HTML'});
-})
+var setMovieFilter = (chat_id, new_filter) => {
+	store.get('u', chat_id)
+		.then((doc) => {
+			if (typeof new_filter == 'number') {
+				new_filter = doc.recent[new_filter];
+			}
+			let new_recent = doc && doc.recent || [];
+			new_recent.unshift(new_filter);
+			for (let i = 1; i < new_recent.length; i++) {
+				if (new_recent[i] == new_filter) {
+					new_recent.splice(i, 1);
+				}
+			}
+			if (new_recent.length > 5) {
+				new_recent.length = 5;
+			}
+			return store.update('u', chat_id, {movie: new_filter, recent: new_recent});
+		})
+		.then(()=> {
+			searches[chat_id] = null;//the search was destroyed
+			return bot.sendMessage(chat_id, `\u{26A0}Now the filter by movie title is <b>${new_filter}</b>`, {parse})
+		})
+		.catch(err => {
+			console.error('ERROR', err);
+			bot.sendMessage(chat_id,
+				`\u{2757}We have some problem. Please repeat.`, {parse})
+		});
+}
 
-tg.controller('ResumeController', ($) => {
-	startSearch($.chatId);
-})
-
-tg.controller('PauseController', ($) => {
-	pauseFlags[$.chatId] = true;
-})
-
-tg.controller('AllController', ($) => {
-	var query = null;
-	db.get('c:' + $.chatId, function (err, doc) {
-		if (doc && doc.query) query = doc.query;
-		db.save('c:' + $.chatId, {
-			query: query,
-			movie: null,
-			skip: 0
-		}, function (err, res) {
-			if (err) {
-				console.error('error Save Chat', err);
+var startSearch = (chat_id, norm_text) => {
+	let first_msg, movie, movieMes;
+	store.get('u', chat_id)
+		.then((doc) => {//got movie filter
+			movie = doc && doc.movie;
+			movieMes = movie ? ' in <b>*' + movie + '*</b>' : '';
+			searches[chat_id] = new Search(norm_text, movie);
+			return bot.sendMessage(chat_id, 'Now seeking <b>' + norm_text + '</b> ' + movieMes, {parse})
+		})
+		.then((result) => {//got shown first message
+			first_msg = result.result;
+			return searches[chat_id].init();
+		})
+		.then((res)=> {//got phrase count and suggestions if any
+			if (res.count == 0) {
+				var txt = `Now seeking <b>${norm_text}</b> ${movieMes}\nNot Found.`;
+				var markup = null;
+				if (res.suggestions && res.suggestions[0]) {
+					txt += ' Did you mean:';
+					var keyboard = [[]];
+					res.suggestions.forEach((item) => {
+						keyboard[0].push(bot.inlineButton(
+							item.text,
+							{callback: `/_${item.text}`}
+						));
+					});
+					markup = bot.inlineKeyboard(keyboard);
+				}
+				return bot.editText(
+					{chatId: chat_id, messageId: first_msg.message_id},
+					txt,
+					{markup, parse}
+				);
 			} else {
-				$.sendMessage('Search all movies');
+				return bot.editText(
+					{chatId: chat_id, messageId: first_msg.message_id},
+					`Now seeking <b>${norm_text}</b> ${movieMes}\nFound ${res.count}${movie ? ' (without filter)' : ''}`,
+					{parse}
+				);
 			}
 		})
-	})
-})
-
-tg.controller('FilterController', ($) => {
-	//console.log('*'+$.args+'*');
-	var movie = null;
-	var query = null;
-	db.get('c:' + $.chatId, function (err, doc) {
-		if (doc && doc.query) {
-			query = doc.query;
-			movie = doc.movie;
-		}
-		if ($.args) {
-			movie = $.args.toLowerCase();
-			db.save('c:' + $.chatId, {
-				query: query,
-				movie: movie,
-				skip: 0, //start search from beginning if filter was changed
-				count: 0
-			}, function (err, res) {
-				if (err) {
-					console.error('error Save Chat', err);
-				} else {
-					$.sendMessage('Only movie containing <b>' + movie + '</b>', {parse_mode: 'HTML'});
-				}
-			})
-		} else {
-			if (movie) {
-				$.sendMessage('Only movie containing <b>' + movie + '</b>', {parse_mode: 'HTML'});
-			} else {
-				$.sendMessage('Search all movies');
-			}
-		}
-	})
-})
-
-//default controller
-tg.controller('WordsController', ($) => {
-	if ($.args) {
-		var query = $.args; //query string
-		var movie = null; //movie title filter
-		db.get('c:' + $.chatId, function (err, doc) {
-			if (doc && doc.movie) {
-				movie = doc.movie //maybe have stored filter
-			}
-			db.save('c:' + $.chatId, { //save all
-				query: query,
-				movie: movie,
-				skip: 0, //nothing yet processed
-				count: 0 //results count also = 0
-			}, function (err, res) {
-				if (err) {
-					console.error('error Save search condition', err);
-				} else {
-					startSearch($.chatId);
-				}
-			})
+		.then(() => {//got edited first message
+			processPhrase(chat_id, searches[chat_id].id);
 		})
+		.catch(err => {
+			console.error('ERROR', err);
+			bot.sendMessage(chat_id,
+				`\u{2757}We have some problem. Please repeat.`, {parse})
+		});
+}
+//processPhrase*****************************************************************************************
+var processPhrase = (chat_id, search_id) => {
+	if (searches[chat_id] && searches[chat_id].id == search_id) {
+		searches[chat_id].getPhrase()
+			.then((phrase) => {
+				console.log('phrase **************************', phrase)
+				if (phrase) {
+					if (phrase.hasNext) {
+						showPhrase(chat_id, phrase);// that's all
+					} else {
+						Promise.all([showPhrase(chat_id, phrase), searches[chat_id].getNext()]).then((values) => {
+							if (values[1]) { //hasNext == true
+								addButton(chat_id, values[0].result.message_id)
+							} else {//hasNext == false
+								bot.sendMessage(chat_id,
+									`\u{26A0}The search was completed. No more phrases.`, {parse})
+							}
+						});
+					}
+				} else {
+					bot.sendMessage(chat_id,
+						`\u{26A0}The filter was applied. No phrases after that.`, {parse})
+				}
+			})
+		return true;
 	} else {
-		$.sendMessage('Nothing to seek!');
+		return false;
 	}
-})
+}
 
-tg.callbackQueries((callback_data) => {
-	var chat_id = callback_data.message.chat.id;
-	var query = callback_data.data;
-	var movie = null; //movie title filter
-	db.get('c:' + chat_id, function (err, doc) {
-		if (doc && doc.movie) {
-			movie = doc.movie //maybe have stored filter
+//showPhrase****************************************************************
+var showPhrase = (chat_id, phrase) => {
+	return new Promise((resolve, reject) => {
+		let keyboard = [[bot.inlineButton(phrase.info, {url: phrase.imdb})]];
+		if (phrase.hasNext) {
+			keyboard.push([
+				bot.inlineButton(
+					`\u{2795} Get Next Phrase`,
+					{callback: `phrase:next:${searches[chat_id].id}`}
+				)
+			]);
 		}
-		db.save('c:' + chat_id, { //save all
-			query: query,
-			movie: movie,
-			skip: 0, //nothing yet processed
-			count: 0 //results count also = 0
-		}, function (err, res) {
-			if (err) {
-				console.error('error Save search condition', err);
-			} else {
-				startSearch(chat_id);
-			}
-		})
-	})
-})
-//inlineMode
-/*tg.inlineMode(($) => {
- console.log('ttttttttttttt');
- tg.answerInlineQuery($.id, [{
- type: 'video',
- video_url: 'http://playphrase.me/video/phrase/5448547209bd000ab7589fc6.mp4',
- mime_type: 'video/mp4',
- thumb_url: 'http://www.phrases.org.uk/images/under-the-thumb.jpg',
- title: 'example'
- }])
- })*/
-
-var startSearch = (chat_id)=> {
-	db.get('c:' + chat_id, function (err, doc) { //get search condition from DB
-		if (doc) {
-			var queue = new Queue(chat_id);
-			var query = doc.query;
-			var movie = doc.movie;
-			var skip = doc.skip;
-			var count = doc.count;
-			var filter = movie ? (item)=> {
-				return (item.video_info.info.split('/')[0].toLowerCase().includes(movie))
-			} : null;
-			pauseFlags[chat_id] = false;
-			searchLoop(chat_id, 'start', query, skip, 10, queue, count, filter, movie);
+		let markup = bot.inlineKeyboard(keyboard);
+		let caption = ellipsize(phrase.caption, 190, {ellipse: ' …'});
+		//firstly try to use video from telegram cache
+		if (phrase.tfid) {
+			bot.sendVideo(chat_id, phrase.tfid, {caption, markup})
+				.then((res)=> {
+					console.log('res+++++++++++', res)
+					if (!res || !res.ok) {
+						throw error('error Send TFID');
+					} else {
+						resolve(res);
+					}
+				})
+				.catch((err)=> {
+					console.log('err+++++++++++', err);
+					phrase.tfid = null;
+					//repeat without tfid
+					showPhrase(chat_id, phrase);
+					reject(err);
+				})
 		} else {
-			console.error('error Get search condition from DB', err);
+			var readFromAttachStream = store.db.getAttachment('p:' + phrase._id, 'video', function (err) {
+				if (err) {
+					console.error('error getAttachment', err);
+					reject(err);
+				}
+			});
+			var fileName = 'temp/' + Math.random().toString(16) + '.mp4';
+			var writeToFileStream = fs.createWriteStream(fileName);
+			writeToFileStream.on('finish', () => {
+				bot.sendVideo(chat_id, fs.createReadStream(fileName), {caption, markup})
+
+					.then((res)=> {
+						console.log('res------------', res)
+						if (!res || !res.ok) {
+							throw error('error Send Video');
+						} else {
+							fs.unlink(fileName);
+							if (res.result && res.result.video && res.result.video.file_id) {
+								store.update('p', phrase._id, {tfid: res.result.video.file_id})
+									.catch((err)=> {
+										console.error('error Merge TFID', err);
+									});
+							}
+							resolve(res);
+						}
+					})
+					.catch((err)=> {
+						fs.unlink(fileName);
+						reject(err);
+					})
+			})
+			readFromAttachStream.pipe(writeToFileStream);
 		}
 	})
-};
+}
 
-var searchLoop = (chat_id, mode, query, skip, need, queue, count, filter, movie)=> {
-	var processed = skip;
-	var mes;
-	var options = {
-		parse_mode: 'HTML',
-		reply_markup: JSON.stringify({
-			resize_keyboard: true,
-			selective: true,
-			keyboard: [[{
-				text: '\u23F8 Pause' //callback_data: '/skip:' + (processed - 1) + ':' + count
-			}]]
-		})
-	};
-	var modeMes = (mode == 'start') ? 'Now ' : 'Continue ';
-	var movieMes = movie ? ' In <b>*' + movie + '*</b>' : '';
-	//query resuts from playphrase.me API
-	req.get({
-			url: 'http://playphrase.me/search',
-			port: 9093,
-			json: true,
-			query: {
-				q: query,
-				skip: skip
-			}
-		},
-		function (body, response, err) {
-			if (!err && response.statusCode == 200) {
-				if (body.phrases && body.phrases[0]) {
-					if (mode != 'loop') {//if not loop search display message
-						mes = modeMes + 'seeking <b>' + query + '</b> …' + movieMes;
-						if (mode == 'start') { //if first search display quantity of results
-							mes += '\nFound ' + body.count + (movie ? ' (without filter)' : '')
-						}
-						queue.enqueue({
-							type: 'message',
-							text: mes,
-							options: options
-						});
-					}
-					body.phrases.every(function (item, i, arr) {
-						//console.log('-------', item.text, item.video_info.info);
-						processed += 1;
-						if (!filter || filter(item)) {//enqueue result
-							count++;
-							queue.enqueue({
-								type: 'result',
-								_id: item._id,
-								caption: item.text,
-								info: item.video_info.info,
-								imdb: item.video_info.imdb,
-								movie: item.movie,
-								position: processed
-							});
-						}
-						return !pauseFlags[chat_id] && queue.enqueuedResults < need; //break if enqueuedResults >= need
-					});
-					if (!pauseFlags[chat_id] && queue.enqueuedResults < need) {
-						searchLoop(chat_id, 'loop', query, processed, need, queue, count, filter, movie);//continue search
-					} else {
-						db.save('c:' + chat_id, { //save all
-							query: query,
-							movie: movie,
-							skip: processed,
-							count: count
-						}, function (err, res) {
-							if (err) {
-								console.error('error Save search condition', err);
-							} else {
-								queue.enqueue({  //enqueue message and stop
-									type: 'message',
-									options: {
-										parse_mode: 'HTML',
-										reply_markup: JSON.stringify({
-											resize_keyboard: true,
-											selective: true,
-											keyboard: [[{
-												text: '\u25B6 Resume'
-											}]]
-										})
-									},
-									position: processed,
-									text: 'Search <b>' + query + '</b> paused after ' + count + ' results'
-								});
-							}
-						});
-					}
-				} else {//no results
-					if (mode == 'start') { //nothing at all! so show Message "Not Found"
-						mes = modeMes + 'seeking <b>' + query + '</b> …' + movieMes + '\nNot Found.';
-					} else {
-						mes = 'Search <b>' + query + '</b> finished with ' + count + ' results';
-					}
-					options = {
-						parse_mode: 'HTML',
-						reply_markup: JSON.stringify({hide_keyboard: true, selective: true})//hide button Pause
-					}
-					queue.enqueue({
-						type: 'message',
-						text: mes,
-						options: options
-					});
-					if (body.suggestions && body.suggestions[0]) {
-						var keyboard = [[]];
-						body.suggestions.forEach(function (item, i, arr) {
-							keyboard[0].push({
-								text: item.text,
-								callback_data: item.text
-							});
-						});
-						queue.enqueue({
-							type: 'message',
-							text: 'Did you mean:',
-							options: {
-								parse_mode: 'HTML',
-								reply_markup: JSON.stringify({inline_keyboard: keyboard})
-							}
-						});
-					}
-				}
-			} else {
-				console.error('playphrase.me API error' + (response ? response.statusCode : '') + '\n' + err);
-			}
-		})
-};
-
+var addButton = (chat_id, message_id) => {
+	let keyboard = [[
+		bot.inlineButton(
+			`\u{2795} Get Next Phrase`,
+			{callback: `phrase:next:${searches[chat_id].id}`}
+		)
+	]];
+	let markup = bot.inlineKeyboard(keyboard);
+	bot.editMarkup({chatId: chat_id, messageId: message_id}, {parse, markup})
+		.then(() => {
+			return phrase.hasNext
+		});
+}
 
