@@ -89,7 +89,7 @@ bot.on(['text'], (user_msg) => {
 });
 
 bot.on('callbackQuery', (msg) => {
-	console.log('callbackQuery',msg);
+	console.log('callbackQuery');
 	const chat_id = msg.from.id;
 	const cmd = msg.data;
 	const bot_msg = msg.message;
@@ -229,27 +229,31 @@ var processPhrase = (chat_id, search_id) => {
 	if (searches[chat_id] && searches[chat_id].id == search_id) {
 		searches[chat_id].getPhrase()
 			.then((phrase) => {
-				console.log('phrase **************************', phrase)
 				if (phrase) {
 					if (phrase.hasNext) {
 						showPhrase(chat_id, phrase);// that's all
 					} else {
-						Promise.all([showPhrase(chat_id, phrase), searches[chat_id].getNext()]).then((values) => {
+						Promise.all([showPhrase(chat_id, phrase), searches[chat_id].getNext()])
+							.then((values) => {
+								console.log('promise.all');
 							if (values[1]) { //hasNext == true
 								addButton(chat_id, values[0].result.message_id)
 							} else {//hasNext == false
 								bot.sendMessage(chat_id,
 									`\u{26A0}The search was completed. No more phrases.`, {parse})
 							}
-						});
+						})
+						.catch((err)=>{console.log('promise.all error',err)});
 					}
 				} else {
 					bot.sendMessage(chat_id,
 						`\u{26A0}The filter was applied. No phrases after that.`, {parse})
 				}
 			})
+			.catch((err) => {console.error('ERROR', err);});
 		return true;
 	} else {
+		console.log('processPhrase ----------------------')
 		return false;
 	}
 }
@@ -272,7 +276,6 @@ var showPhrase = (chat_id, phrase) => {
 		if (phrase.tfid) {
 			bot.sendVideo(chat_id, phrase.tfid, {caption, markup})
 				.then((res)=> {
-					console.log('res+++++++++++', res)
 					if (!res || !res.ok) {
 						throw error('error Send TFID');
 					} else {
@@ -280,11 +283,11 @@ var showPhrase = (chat_id, phrase) => {
 					}
 				})
 				.catch((err)=> {
-					console.log('err+++++++++++', err);
+					console.error('err+++++++++++', err);
 					phrase.tfid = null;
 					//repeat without tfid
-					showPhrase(chat_id, phrase);
-					reject(err);
+					showPhrase(chat_id, phrase)
+					.then((res)=>{resolve(res)});
 				})
 		} else {
 			var readFromAttachStream = store.db.getAttachment('p:' + phrase._id, 'video', function (err) {
@@ -297,9 +300,7 @@ var showPhrase = (chat_id, phrase) => {
 			var writeToFileStream = fs.createWriteStream(fileName);
 			writeToFileStream.on('finish', () => {
 				bot.sendVideo(chat_id, fs.createReadStream(fileName), {caption, markup})
-
 					.then((res)=> {
-						console.log('res------------', res)
 						if (!res || !res.ok) {
 							throw error('error Send Video');
 						} else {

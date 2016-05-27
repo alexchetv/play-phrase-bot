@@ -130,14 +130,18 @@ class Search extends EventEmitter {
 			if (this.buffer.size > 0 && this.buffer.peek().loaded) {
 				resolve(this.buffer.dequeue());
 			} else {
-				this.once('ready', () => {
-					console.log('ready************************************');
-					resolve(this.buffer.dequeue());
-				});
-				this.once('end', () => {
-					console.log('end************************************');
+				if (this.ended) {
 					resolve(null);
-				});
+				} else {
+					this.once('ready', () => {
+						//console.log('ready************************************');
+						resolve(this.buffer.dequeue());
+					});
+					this.once('end', () => {
+						//console.log('end************************************');
+						resolve(null);
+					});
+				}
 			}
 		})
 
