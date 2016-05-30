@@ -1,5 +1,6 @@
 "use strict";
 const EventEmitter = require('events');
+//const logger = require('.logger');
 const rp = require('request-promise');
 var request = require('request');
 const Buffer = require('./buffer.js');
@@ -15,8 +16,10 @@ class Search extends EventEmitter {
 		this.buffer = new Buffer();
 		this.filling = false; //flag
 		this.loading = false; //flag
-		this.total = 0;
+		this.processing = false; //flag
+		this.filteredCount = 0;
 		this.skip = 0;
+		this.lastPhrase = {}
 		this.ended = false; //flag
 		const ALPHABET = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
 		const ID_LENGTH = 16;
@@ -32,7 +35,8 @@ class Search extends EventEmitter {
 			return (item.video_info.info.split('/')[0].toLowerCase().includes(this.movie))
 		} : null;
 		this.on('add', () => {
-			this.startLoadVideo();
+			//logger.log('[search] on Add');
+			if (!this.loading) this.startLoadVideo();
 		});
 	}
 
@@ -48,6 +52,7 @@ class Search extends EventEmitter {
 			})
 				.then((res)=> {
 					if (res.result == 'OK') {
+						this.rawCount = res.count;
 						this.fillBuffer(res.phrases);
 						resolve({
 							count: res.count,
@@ -79,11 +84,11 @@ class Search extends EventEmitter {
 							info: item.video_info.info,
 							imdb: item.video_info.imdb,
 							movie: item.movie,
-							number: this.total,
+							number: this.filteredCount,
 							loaded: false
 						}
 					)
-					this.total++;
+					this.filteredCount++;
 					this.emit('add');
 				}
 				this.skip++;
@@ -93,8 +98,6 @@ class Search extends EventEmitter {
 			this.filling = false;
 			return;
 		}
-
-
 		rp.get({
 			url: 'http://playphrase.me:9093/search',
 			json: true,
@@ -119,26 +122,35 @@ class Search extends EventEmitter {
 				this.filling = false;
 				console.error('Search Phrase Request Error', err)
 			});
+	}
 
-
+	getProgress() {
+		if (this.rawCount === undefined) return 0;
+		if (this.rawCount === 0) return 100;
+		return Math.floor(this.skip/this.rawCount*100);
 	}
 
 	//getPhrase*****************************************************************************************
 	getPhrase() {
-		if (!this.filling) this.fillBuffer();
+		if (!this.filling) {
+			this.fillBuffer();
+		}
+		//logger.log('[search] getPhrase');
 		return new Promise((resolve, reject) => {
 			if (this.buffer.size > 0 && this.buffer.peek().loaded) {
+				//logger.log('[search] loaded');
 				resolve(this.buffer.dequeue());
 			} else {
 				if (this.ended) {
+					//logger.log('[search] ended');
 					resolve(null);
 				} else {
 					this.once('ready', () => {
-						//console.log('ready************************************');
+						//logger.log('[search] once ready');
 						resolve(this.buffer.dequeue());
 					});
 					this.once('end', () => {
-						//console.log('end************************************');
+						//logger.log('[search] once end');
 						resolve(null);
 					});
 				}
@@ -170,28 +182,99 @@ class Search extends EventEmitter {
 
 //startLoadVideo********************************************************************
 	startLoadVideo() {
-		if (this.loading) return;
+		//logger.log('[search] startLoadVideo');
 		this.loading = true;
-		this._load(0);
+		for(let i=0;i< this.buffer.size;i++){
+			let item = this.buffer.item(i);
+			if (!item.loaded) {
+				this.loadItemVideo(item)
+				.then(() => {
+						if (i == 0) this.emit('ready');
+						this.startLoadVideo()
+					});
+				return;
+			}
+		}
+		this.loading = false;
 	}
+
+loadItemVideo(item)	{
+	return new Promise((resolve, reject) => {
+
+
+
+		//logger.log('[search] loadItemVideo', item.skip);
+			this.store.get('p', item._id)
+				.then((doc)=> {
+					if (doc && doc._attachments && doc._attachments.video && doc._attachments.video.stub && (doc._attachments.video.length > 0)) {//video already saved in DB
+						item.loaded = true;
+						item.tfid = doc.tfid; //may be null
+						resolve();
+					} else {//not saved yet
+
+
+						var writeToAttachStream;
+						//save phrase
+						this.store.save('p', item._id, {
+							text: item.caption,
+							info: item.info,
+							imdb: item.imdb,
+							movie: item.movie
+						})
+							.then((res) => {
+								//and save video as attachment
+								var attachmentData = {
+									name: 'video',
+									'Content-Type': 'video/mp4'
+								}
+								var self = this;
+								writeToAttachStream = self.store.db.saveAttachment({id: res.id, rev: res.rev}, attachmentData,
+									function (err, res) {
+										if (err) {
+											console.error('error saveAttachment', err);
+											reject(err);
+										} else {
+											item.loaded = true;
+											resolve();
+										}
+									}
+								)
+								request('http://playphrase.me/video/phrase/' + item._id + '.mp4').pipe(writeToAttachStream);
+							})
+							.catch((err)=> {
+								console.error('error Save PhraseToDB', err);
+								reject(err);
+							})
+					}
+				})
+				.catch((err)=> {
+					console.error('[error get from DB]', err);
+				})
+
+
+	})
+}
 
 //_load********************************************************************
 	_load(i) {
+		//logger.log('[search] _load(i)', i);
 		if (i >= this.buffer.size) {
+			//logger.log('[search] i >= this.buffer.size', this.buffer.size);
 			this.loading = false;
 		} else {
 			let item = this.buffer.item(i);
+			//logger.log('[search] item', item.skip ,item.loaded);
 			if (item.loaded) {
-				this._load(++i);
+				//logger.log('[search] item.loaded');
+				this._load(++i);//go to next
 			} else {
 				this.store.get('p', item._id)
-
 					.then((doc)=> {
 						if (doc && doc._attachments && doc._attachments.video && doc._attachments.video.stub && (doc._attachments.video.length > 0)) {//video already saved in DB
 							item.loaded = true;
 							item.tfid = doc.tfid; //may be null
 							if (i == 0) this.emit('ready');
-							this._load(++i);
+							this._load(0);//restart from begining
 						} else {//not saved yet
 
 
@@ -217,7 +300,7 @@ class Search extends EventEmitter {
 											} else {
 												item.loaded = true;
 												if (i == 0) self.emit('ready');
-												self._load(++i);
+												self._load(0);//restart from begining
 											}
 										}
 									)

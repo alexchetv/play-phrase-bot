@@ -1,4 +1,5 @@
 var cradle = require('cradle');
+//const logger = require('./logger');
 class Store {
 	constructor(db_name) {
 		this.db = new (cradle.Connection)().database(db_name);
@@ -6,7 +7,7 @@ class Store {
 			if (err || !exists) {
 				throw Error(`[store.error] database ${db_name} connection error`);
 			} else {
-				console.log(`[store.info] database ${db_name} connected`);
+				//logger.log(`[store.info] database ${db_name} connected`);
 			}
 		});
 	}
