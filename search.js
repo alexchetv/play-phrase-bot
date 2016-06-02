@@ -1,6 +1,6 @@
 "use strict";
 const EventEmitter = require('events');
-//const logger = require('.logger');
+//const logger = require('./logger');
 const rp = require('request-promise');
 var request = require('request');
 const Buffer = require('./buffer.js');
@@ -141,8 +141,8 @@ class Search extends EventEmitter {
 				//logger.log('[search] loaded');
 				resolve(this.buffer.dequeue());
 			} else {
-				if (this.ended) {
-					//logger.log('[search] ended');
+				if (this.buffer.size == 0 && this.ended) {
+					//logger.log('[search] size == 0 && ended');
 					resolve(null);
 				} else {
 					this.once('ready', () => {
