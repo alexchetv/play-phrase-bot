@@ -21,9 +21,11 @@ bot.username = secret.username;
 const parse = 'HTML';
 var searches = {};
 //start command *******************************************************************
-bot.on(['/start', '/s'], msg => {
+bot.on(['/start', '/s','/help','/h'], msg => {
 	bot.sendMessage(msg.from.id,
-		`Send me any text to find containing it phrase from movie.
+		`moviePhrase bot find and show short clips from movies.
+It use database and API from <a href="http://playphrase.me/">playphrase.me</a>
+Send any text to find containing it phrase.
 To filter results by movie title send /movie (or /m)`,
 		{parse});
 });
