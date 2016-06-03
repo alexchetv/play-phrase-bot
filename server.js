@@ -199,6 +199,7 @@ var setMovieFilter = (chat_id, new_filter) => {
 var startSearch = (chat_id, norm_text) => {
 	//logger.log('startSearch',norm_text);
 	let first_msg, movie, movieMes;
+	let playphrase_link = `<a href="http://playphrase.me/en/search?q=${encodeURI(norm_text)}">${norm_text}</a>`;
 	if (searches[chat_id] && searches[chat_id].lastPhrase.message_id && searches[chat_id].lastPhrase.key) {
 		//logger.log('Old lastPhrase',searches[chat_id].lastPhrase);
 		let markup = bot.inlineKeyboard([[searches[chat_id].lastPhrase.key]]);
@@ -212,7 +213,7 @@ var startSearch = (chat_id, norm_text) => {
 			//logger.log('got movie filter',movie);
 			movieMes = movie ? ' in <b>*' + movie + '*</b>' : '';
 			searches[chat_id] = new Search(norm_text, movie);
-			return bot.sendMessage(chat_id, 'Now seeking <b>' + norm_text + '</b> ' + movieMes, {parse})
+			return bot.sendMessage(chat_id, `${playphrase_link} ${movieMes} is seeking …`, {parse})
 		})
 		.then((result) => {//got shown first message
 			//logger.log('got shown first message');
@@ -223,7 +224,7 @@ var startSearch = (chat_id, norm_text) => {
 			//logger.log('searches.init()', res.count);
 			if (res.count == 0) {
 				//logger.warn('res.count == 0');
-				var txt = `Now seeking <b>${norm_text}</b> ${movieMes}\nNot Found.`;
+				var txt = `<b>${norm_text}</b> not found.`;
 				var markup = null;
 				if (res.suggestions && res.suggestions[0]) {
 					//logger.log('suggestions');
@@ -245,7 +246,7 @@ var startSearch = (chat_id, norm_text) => {
 			} else {
 				return bot.editText(
 					{chatId: chat_id, messageId: first_msg.message_id},
-					`Now seeking <b>${norm_text}</b> ${movieMes}\nFound ${res.count}${movie ? ' (without filter)' : ''}`,
+					`${playphrase_link} ${movieMes}\nFound ${res.count}${movie ? ' (without filter)' : ''}`,
 					{parse}
 				)
 					.then(() => {//got edited first message
