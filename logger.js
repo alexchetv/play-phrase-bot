@@ -1,9 +1,28 @@
-var logger = {};
+class Logger {
+	constructor(prefix) {
 
-logger.log = (name,...rest) => console.log('\033[34;1m'+name+'\033[39m',rest);
+		this.prefix = prefix;
+	}
 
-logger.warn = (name,...rest) => console.log('\033[33;1m'+name+'\033[39m',rest)
+	log(message, ...args) {
+		console.log('\u001b[30;1m' + (this.prefix ? this.prefix + ' ':'') + message + '\u001b[39m', ...args);
+	}
 
-logger.err = (name,...rest) => console.log('\033[31;1m'+name+'\033[39m',rest)
+	info(message, ...args) {
+		console.log('\u001b[34;1m' + (this.prefix ? this.prefix + ' ':'') + message + '\u001b[39m', ...args);
+	}
 
-module.exports = logger;
+	success(message, ...args) {
+		console.log('\u001b[32;1m' + (this.prefix ? this.prefix + ' ':'') + message + '\u001b[39m', ...args);
+	}
+
+	warn(message, ...args) {
+		console.log('\u001b[33;1m' + (this.prefix ? this.prefix + ' ':'') + message + '\u001b[39m', ...args)
+	}
+
+	err(message, ...args) {
+		console.log('\u001b[31;1m' + (this.prefix ? this.prefix + ' ':'') + message + '\u001b[39m', ...args)
+	}
+}
+
+module.exports = Logger;

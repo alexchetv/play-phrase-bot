@@ -1,6 +1,7 @@
 "use strict";
 const EventEmitter = require('events');
-//const logger = require('./logger');
+const Logger = require('./logger');
+const logger = new Logger('[search]');
 const rp = require('request-promise');
 var request = require('request');
 const Buffer = require('./buffer.js');
@@ -35,7 +36,7 @@ class Search extends EventEmitter {
 			return (item.video_info.info.split('/')[0].toLowerCase().includes(this.movie))
 		} : null;
 		this.on('add', () => {
-			//logger.log('[search] on Add');
+			//logger.log('on Add');
 			if (!this.loading) this.startLoadVideo();
 		});
 	}
@@ -135,22 +136,22 @@ class Search extends EventEmitter {
 		if (!this.filling) {
 			this.fillBuffer();
 		}
-		//logger.log('[search] getPhrase');
+		logger.log('getPhrase');
 		return new Promise((resolve, reject) => {
 			if (this.buffer.size > 0 && this.buffer.peek().loaded) {
-				//logger.log('[search] loaded');
+				//logger.log('loaded');
 				resolve(this.buffer.dequeue());
 			} else {
 				if (this.buffer.size == 0 && this.ended) {
-					//logger.log('[search] size == 0 && ended');
+					//logger.log('size == 0 && ended');
 					resolve(null);
 				} else {
 					this.once('ready', () => {
-						//logger.log('[search] once ready');
+						//logger.log('once ready');
 						resolve(this.buffer.dequeue());
 					});
 					this.once('end', () => {
-						//logger.log('[search] once end');
+						//logger.log('once end');
 						resolve(null);
 					});
 				}
@@ -182,7 +183,7 @@ class Search extends EventEmitter {
 
 //startLoadVideo********************************************************************
 	startLoadVideo() {
-		//logger.log('[search] startLoadVideo');
+		//logger.log('startLoadVideo');
 		this.loading = true;
 		for(let i=0;i< this.buffer.size;i++){
 			let item = this.buffer.item(i);
@@ -203,7 +204,7 @@ loadItemVideo(item)	{
 
 
 
-		//logger.log('[search] loadItemVideo', item.skip);
+		logger.log('loadItemVideo', item.skip);
 			this.store.get('p', item._id)
 				.then((doc)=> {
 					if (doc && doc._attachments && doc._attachments.video && doc._attachments.video.stub && (doc._attachments.video.length > 0)) {//video already saved in DB
@@ -257,15 +258,15 @@ loadItemVideo(item)	{
 
 //_load********************************************************************
 	_load(i) {
-		//logger.log('[search] _load(i)', i);
+		//logger.log('_load(i)', i);
 		if (i >= this.buffer.size) {
-			//logger.log('[search] i >= this.buffer.size', this.buffer.size);
+			//logger.log('i >= this.buffer.size', this.buffer.size);
 			this.loading = false;
 		} else {
 			let item = this.buffer.item(i);
-			//logger.log('[search] item', item.skip ,item.loaded);
+			//logger.log('item', item.skip ,item.loaded);
 			if (item.loaded) {
-				//logger.log('[search] item.loaded');
+				//logger.log('item.loaded');
 				this._load(++i);//go to next
 			} else {
 				this.store.get('p', item._id)
