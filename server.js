@@ -4,7 +4,8 @@ const secret = require('./secret');
 const cradle = require('cradle');
 const ellipsize = require('ellipsize');
 const Store = require('./store');
-const logger = require('./logger');
+const Logger = require('./logger');
+const logger = new Logger('[server]','e','./my.log');
 const fs = require('fs');
 var store = new Store('telegram');
 const Search = require('./search.js');
@@ -67,7 +68,7 @@ bot.on(['/movie', '/m'], msg => {
 			bot.sendMessage(msg.from.id, txt, {parse, markup});
 		})
 		.catch(err => {
-			console.error('ERROR', err);
+			logger.e('set movie filter', err);
 			bot.sendMessage(msg.from.id,
 				`\u{2757}We have some problem. Please repeat.`, {parse})
 		})
@@ -190,7 +191,7 @@ var setMovieFilter = (chat_id, new_filter) => {
 			return bot.sendMessage(chat_id, `\u{26A0}Now the filter by movie title is <b>${new_filter}</b>`, {parse})
 		})
 		.catch(err => {
-			console.error('ERROR', err);
+			logger.e('setMovieFilter', err);
 			bot.sendMessage(chat_id,
 				`\u{2757}We have some problem. Please repeat.`, {parse})
 		});
@@ -256,7 +257,7 @@ var startSearch = (chat_id, norm_text) => {
 			}
 		})
 		.catch(err => {
-			console.error('ERROR', err);
+			logger.e('startSearch', err);
 			bot.sendMessage(chat_id,
 				`\u{2757}We have some problem. Please repeat.`, {parse})
 		});
