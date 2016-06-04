@@ -119,7 +119,7 @@ bot.on('callbackQuery', (msg) => {
 				store.update('u', chat_id, {movie: null})
 					.then(() => {
 						searches[chat_id] = null;//the search was destroyed
-						bot.sendMessage(chat_id, `\u{26A0}Now the filter by movie title is DISABLED`)
+						bot.sendMessage(chat_id, `\u{26A0}The filter by movie title is DISABLED from now`)
 					})
 			}
 				break;
@@ -188,7 +188,7 @@ var setMovieFilter = (chat_id, new_filter) => {
 		})
 		.then(()=> {
 			searches[chat_id] = null;//the search was destroyed
-			return bot.sendMessage(chat_id, `\u{26A0}Now the filter by movie title is <b>${new_filter}</b>`, {parse})
+			return bot.sendMessage(chat_id, `\u{26A0}The filter by movie title is <b>${new_filter}</b> from now`, {parse})
 		})
 		.catch(err => {
 			logger.e('setMovieFilter', err);
