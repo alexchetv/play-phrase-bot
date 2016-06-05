@@ -199,11 +199,9 @@ class Search extends EventEmitter {
 		this.loading = false;
 	}
 
+//loadItemVideo********************************************************************
 loadItemVideo(item)	{
 	return new Promise((resolve, reject) => {
-
-
-
 		logger.l('loadItemVideo', item.skip);
 			this.store.get('p', item._id)
 				.then((doc)=> {
@@ -212,8 +210,6 @@ loadItemVideo(item)	{
 						item.tfid = doc.tfid; //may be null
 						resolve();
 					} else {//not saved yet
-
-
 						var writeToAttachStream;
 						//save phrase
 						this.store.save('p', item._id, {
