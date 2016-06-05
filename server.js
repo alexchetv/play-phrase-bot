@@ -1,14 +1,18 @@
 'use strict';
-
+/*
+ **Windows users**: most probably ffmpeg and ffprobe will _not_ be in your `%PATH`, so you _must_ set `%FFMPEG_PATH` and `%FFPROBE_PATH`.
+ */
 const secret = require('./secret');
+const rp = require('request-promise');
 const cradle = require('cradle');
 const ellipsize = require('ellipsize');
 const Store = require('./store');
 const Logger = require('./logger');
-const logger = new Logger('[server]','e','./my.log');
+const logger = new Logger('[server]', 'e');
 const fs = require('fs');
 var store = new Store('telegram');
 const Search = require('./search.js');
+const gspeech = require('gspeech-api');
 const TeleBot = require('telebot');
 const bot = new TeleBot({
 	token: secret.token,
@@ -22,7 +26,7 @@ bot.username = secret.username;
 const parse = 'HTML';
 var searches = {};
 //start command *******************************************************************
-bot.on(['/start', '/s','/help','/h'], msg => {
+bot.on(['/start', '/s', '/help', '/h'], msg => {
 	bot.sendMessage(msg.from.id,
 		`moviePhrase bot find and show short clips from movies.
 It use database and API from <a href="http://playphrase.me/">playphrase.me</a>
@@ -88,6 +92,43 @@ bot.on(['text'], (user_msg) => {
 	}
 
 	startSearch(chat_id, norm_text);
+
+});
+
+bot.on(['voice'], (user_msg) => {
+	//logger.l('voice', user_msg);
+	bot.getFile(user_msg.voice.file_id)
+		.then((res)=> {
+			//logger.l('getFile', res);
+			let link = `https://api.telegram.org/file/bot${secret.token}/${res.result.file_path}`;
+			//logger.l('link', link);
+			rp(link, { encoding : null })
+				.then(function (data) {
+					fs.writeFile('./temp/ex.oga',data, (err)=>{
+						if (err) {
+							logger.e('file save error', err);
+						} else {
+							gspeech.recognize('./temp/ex.oga', function(err, data) {
+								if (err){
+									logger.e('recognize',err);
+								} else {
+									//logger.s("Final transcript is", data.transcript);
+									bot.sendMessage(user_msg.from.id,
+										`You say: <b>${data.transcript}</b>`, {parse})
+								}
+							});
+						}
+
+					});
+				})
+				.catch(function (err) {
+					logger.e('download File Error', err);
+				});
+		})
+		.catch((err)=> {
+			logger.e('getFile Error', err);
+
+		});
 
 });
 
@@ -272,7 +313,7 @@ var processPhrase = (chat_id) => {
 				if (phrase.hasNext) {
 					//logger.log('showPhrase with next');
 					showPhrase(chat_id, phrase)
-					.then((res) =>{
+						.then((res) => {
 							//logger.log('set lastPhrase-1', res.message_id,res.key);
 							searches[chat_id].lastPhrase.message_id = res.message_id;
 							searches[chat_id].lastPhrase.key = res.key;
@@ -343,7 +384,7 @@ var showPhrase = (chat_id, phrase) => {
 						throw error('error Send TFID');
 					} else {
 						//logger.log('resolve video sended with tfid');
-						resolve({message_id:res.result.message_id, key:imdb_key});
+						resolve({message_id: res.result.message_id, key: imdb_key});
 					}
 				})
 				.catch((error)=> {
@@ -382,7 +423,7 @@ var showPhrase = (chat_id, phrase) => {
 										//logger.err('error Merge TFID', error);
 									});
 							}
-							resolve({message_id:res.result.message_id,key:imdb_key});
+							resolve({message_id: res.result.message_id, key: imdb_key});
 						}
 					})
 					.catch((error)=> {

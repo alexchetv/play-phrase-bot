@@ -6,6 +6,7 @@
   "dependencies": {
     "cradle": "^0.7.1",
     "ellipsize": "0.0.2",
+    "gspeech-api": "^1.0.0",
     "request-promise": "^3.0.0",
     "telebot": "^1.0.2"
   },
