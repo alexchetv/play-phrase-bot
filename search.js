@@ -3,10 +3,12 @@ const EventEmitter = require('events');
 const Logger = require('./logger');
 const logger = new Logger('[search]','e','./my.log');
 const rp = require('request-promise');
-var request = require('request');
+const request = require('request');
 const Buffer = require('./buffer.js');
-const Store = require('./store');
+const Store = require('./store.js');
 const MIN_BUFFER = 10;
+const Util = require('./util.js');
+const ID_LENGTH = 16;
 
 class Search extends EventEmitter {
 	constructor(query, movie) {
@@ -22,16 +24,7 @@ class Search extends EventEmitter {
 		this.skip = 0;
 		this.lastPhrase = {}
 		this.ended = false; //flag
-		const ALPHABET = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
-		const ID_LENGTH = 16;
-		let generate = () => {
-			let rtn = '';
-			for (let i = 0; i < ID_LENGTH; i++) {
-				rtn += ALPHABET.charAt(Math.floor(Math.random() * ALPHABET.length));
-			}
-			return rtn;
-		}
-		this.id = generate();
+		this.id = Util.gen(ID_LENGTH);
 		this.filter = this.movie ? (item) => {
 			return (item.video_info.info.split('/')[0].toLowerCase().includes(this.movie))
 		} : null;
