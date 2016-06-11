@@ -36,7 +36,7 @@ class Logger {
 			}
 		} else {
 			this.custom = new Console(process.stdout, process.stderr);
-			this.close = '';
+			this.close = '\u001b[39m';
 			this.open = {
 				l: '\u001b[30;1m',
 				i: '\u001b[34;1m',
