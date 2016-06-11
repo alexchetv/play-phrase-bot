@@ -69,11 +69,9 @@ class Logger {
 
 	c(checked, messageOk, messageNotOk,interrupt = true) {
 		if (!checked) {
+			this.e(messageNotOk);
 			if (interrupt) {
 				this.custom.assert(checked, this.open.e + this.prefix + messageNotOk + this.close);
-			}
-			else {
-				this.e(messageNotOk);
 			}
 		} else {
 			this.s(messageOk);

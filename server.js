@@ -8,7 +8,7 @@ const cradle = require('cradle');
 const ellipsize = require('ellipsize');
 const Store = require('./store');
 const Logger = require('./logger');
-const logger = new Logger('[server]', 'e','./my.log');
+const logger = new Logger('[server]', 'e', './my.log');
 const fs = require('fs');
 const Util = require('./util.js');
 var store = new Store('telegram');
@@ -32,7 +32,8 @@ bot.on(['/start', '/s', '/help', '/h'], msg => {
 		`moviePhrase bot find and show short clips from movies.
 It use database and API from <a href="http://playphrase.me/">playphrase.me</a>
 Send any text to find containing it phrase.
-To filter results by movie title send /movie (or /m)`,
+To filter results by movie title send /movie (or /m)
+To repeat one of recent searches send /recent (or /r)`,
 		{parse});
 });
 
@@ -80,6 +81,34 @@ bot.on(['/movie', '/m'], msg => {
 
 });
 
+//show recent buttons *******************************************************************
+bot.on(['/recent', '/r'], msg => {
+
+	store.get('u', msg.from.id)
+		.then(doc => {
+			if (doc && doc.searches && doc.searches[0]) {
+
+				let txt = 'Choose from recent:';
+				let keyboard = [[]];
+				doc.searches.forEach((item) => {
+					logger.l('recent',item);
+					keyboard.push([bot.inlineButton(
+						item,
+						{callback: `/_${item}`}
+					)]);
+				});
+				let markup = bot.inlineKeyboard(keyboard);
+				bot.sendMessage(msg.from.id, txt, {markup, parse});
+			}
+		})
+		.catch(err => {
+			logger.e('set movie filter', err);
+			bot.sendMessage(msg.from.id,
+				`\u{2757}We have some problem. Please repeat.`, {parse})
+		})
+
+});
+
 //begin search *******************************************************************
 bot.on(['text'], (user_msg) => {
 	let chat_id = user_msg.from.id;
@@ -103,7 +132,7 @@ bot.on(['voice'], (user_msg) => {
 			logger.l('getFile', res);
 			let link = `https://api.telegram.org/file/bot${secret.token}/${res.result.file_path}`;
 			logger.l('link', link);
-			rp(link, { encoding : null })
+			rp(link, {encoding: null})
 				.then((data) => {
 					let fileName = './temp/' + Util.gen(16) + '.oga';
 					fs.writeFile(fileName, data, (err) => {
@@ -121,7 +150,7 @@ bot.on(['voice'], (user_msg) => {
 								.catch((err) => {
 									logger.e("recognize error", err);
 									bot.sendMessage(user_msg.from.id,
-									`\u{2757}We have some problem. Please repeat.`, {parse})
+										`\u{2757}We have some problem. Please repeat.`, {parse})
 									fs.unlink(fileName);
 								});
 						}
@@ -147,7 +176,7 @@ bot.on('callbackQuery', (msg) => {
 	const cmd = msg.data;
 	const bot_msg = msg.message;
 
-//suggestion button
+//suggestion or recent searches button
 	if (cmd.startsWith('/_')) {
 		bot.answerCallback(msg.id);
 		bot.editText({
@@ -218,6 +247,30 @@ bot.on('callbackQuery', (msg) => {
 
 bot.connect();
 
+var saveSearch = (chat_id, text) => {
+
+
+	store.get('u', chat_id)
+		.then((doc) => {
+			let searches = doc && doc.searches || [];
+			searches.unshift(text);
+			for (let i = 1; i < searches.length; i++) {
+				if (searches[i] == text) {
+					searches.splice(i, 1);
+				}
+			}
+			if (searches.length > 5) {
+				searches.length = 5;
+			}
+			return store.update('u', chat_id, {searches: searches});
+		})
+		.catch(err => {
+			logger.e('saveSearch', err);
+		});
+
+
+}
+
 var setMovieFilter = (chat_id, new_filter) => {
 	store.get('u', chat_id)
 		.then((doc) => {
@@ -248,11 +301,11 @@ var setMovieFilter = (chat_id, new_filter) => {
 }
 
 var startSearch = (chat_id, norm_text) => {
-	logger.l('startSearch',norm_text);
+	logger.l('startSearch', norm_text);
 	let first_msg, movie, movieMes;
 	let playphrase_link = `<a href="http://playphrase.me/en/search?q=${encodeURI(norm_text)}">${norm_text}</a>`;
 	if (searches[chat_id] && searches[chat_id].lastPhrase.message_id && searches[chat_id].lastPhrase.key) {
-		logger.l('Old lastPhrase',searches[chat_id].lastPhrase);
+		logger.l('Old lastPhrase', searches[chat_id].lastPhrase);
 		let markup = bot.inlineKeyboard([[searches[chat_id].lastPhrase.key]]);
 		bot.editMarkup({chatId: chat_id, messageId: searches[chat_id].lastPhrase.message_id}, {markup});
 	} else {
@@ -261,7 +314,7 @@ var startSearch = (chat_id, norm_text) => {
 	store.get('u', chat_id)
 		.then((doc) => {//got movie filter
 			movie = doc && doc.movie;
-			logger.l('got movie filter',movie);
+			logger.l('got movie filter', movie);
 			movieMes = movie ? ' in <b>*' + movie + '*</b>' : '';
 			searches[chat_id] = new Search(norm_text, movie);
 			return bot.sendMessage(chat_id, `${playphrase_link} ${movieMes} is seeking …`, {parse})
@@ -303,6 +356,9 @@ var startSearch = (chat_id, norm_text) => {
 					.then(() => {//got edited first message
 						logger.l('processPhrase');
 						processPhrase(chat_id, searches[chat_id].id);
+					})
+					.then(() => {
+						saveSearch(chat_id, norm_text);
 					});
 			}
 		})
@@ -323,7 +379,7 @@ var processPhrase = (chat_id) => {
 					logger.l('showPhrase with next');
 					showPhrase(chat_id, phrase)
 						.then((res) => {
-							logger.l('set lastPhrase-1', res.message_id,res.key);
+							logger.l('set lastPhrase-1', res.message_id, res.key);
 							searches[chat_id].lastPhrase.message_id = res.message_id;
 							searches[chat_id].lastPhrase.key = res.key;
 							logger.l('Processing = false 1');
@@ -333,14 +389,14 @@ var processPhrase = (chat_id) => {
 					logger.l('Phrase without next');
 					Promise.all([showPhrase(chat_id, phrase), searches[chat_id].getNext()])
 						.then((values) => {
-							logger.l('Promise resolve all',values);
+							logger.l('Promise resolve all', values);
 							logger.l('set lastPhrase-2', values[0].message_id, values[0].key);
 							searches[chat_id].lastPhrase.message_id = values[0].message_id;
 							searches[chat_id].lastPhrase.key = values[0].key;
 							logger.l('Processing = false 2');
 							searches[chat_id].processing = false;
 							if (values[1]) { //hasNext == true
-								logger.l('addButton',values[0].message_id);
+								logger.l('addButton', values[0].message_id);
 								addButton(chat_id, values[0].message_id);
 							} else {//hasNext == false
 								logger.l('search was completed');
@@ -397,7 +453,7 @@ var showPhrase = (chat_id, phrase) => {
 					}
 				})
 				.catch((error)=> {
-					logger.e('error video sended with tfid',error);
+					logger.e('error video sended with tfid', error);
 					phrase.tfid = null;
 					logger.l('showPhrase repeat');
 					showPhrase(chat_id, phrase)
@@ -420,41 +476,40 @@ var showPhrase = (chat_id, phrase) => {
 				logger.l('sendVideo from stream');
 
 
-				GoogleSpeech.recognize(fileName)
-					.then((text) => {
-						logger.s("Video transcript is", text);
+				/*GoogleSpeech.recognize(fileName)
+				 .then((text) => {
+				 logger.s("Video transcript is", text);*/
 
-						bot.sendVideo(chat_id, fs.createReadStream(fileName), {caption, markup})
-							.then((res)=> {
-								if (!res || !res.ok) {
-									logger.l('Not OK sendVideo from stream');
-									throw error('error Send Video');
-								} else {
-									logger.l('OK sendVideo from stream');
-									fs.unlink(fileName);
-									if (res.result && res.result.video && res.result.video.file_id) {
-										store.update('p', phrase._id, {tfid: res.result.video.file_id})
-											.catch((error)=> {
-												logger.e('error Merge TFID', error);
-											});
-									}
-									resolve({message_id: res.result.message_id, key: imdb_key});
-								}
-							})
-							.catch((error)=> {
-								logger.e('Error sendVideo from stream',error);
-								fs.unlink(fileName);
-								reject(error);
-							})
-
-
+				bot.sendVideo(chat_id, fs.createReadStream(fileName), {caption, markup})
+					.then((res)=> {
+						if (!res || !res.ok) {
+							logger.l('Not OK sendVideo from stream');
+							throw error('error Send Video');
+						} else {
+							logger.l('OK sendVideo from stream');
+							fs.unlink(fileName);
+							if (res.result && res.result.video && res.result.video.file_id) {
+								store.update('p', phrase._id, {tfid: res.result.video.file_id})
+									.catch((error)=> {
+										logger.e('error Merge TFID', error);
+									});
+							}
+							resolve({message_id: res.result.message_id, key: imdb_key});
+						}
 					})
-					.catch((err) => {
-						logger.e("recognize error", err);
+					.catch((error)=> {
+						logger.e('Error sendVideo from stream', error);
 						fs.unlink(fileName);
 						reject(error);
-					});
+					})
 
+
+				/*	})
+				 .catch((err) => {
+				 logger.e("recognize error", err);
+				 fs.unlink(fileName);
+				 reject(error);
+				 });*/
 
 
 			})
@@ -464,7 +519,7 @@ var showPhrase = (chat_id, phrase) => {
 }
 
 var addButton = (chat_id, message_id) => {
-	logger.l('start addButton',searches[chat_id].lastPhrase.key);
+	logger.l('start addButton', searches[chat_id].lastPhrase.key);
 	let keyboard = [[searches[chat_id].lastPhrase.key]];
 	keyboard.push([
 		bot.inlineButton(
