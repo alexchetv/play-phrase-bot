@@ -144,8 +144,10 @@ class Search extends EventEmitter {
 						resolve(this.buffer.dequeue());
 					});
 					this.once('end', () => {
-						logger.l('once end');
-						resolve(null);
+						if (this.buffer.size == 0) {
+							logger.l('size == 0 && once end');
+							resolve(null);
+						}
 					});
 				}
 			}
