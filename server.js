@@ -399,9 +399,9 @@ var processPhrase = (chat_id) => {
 								logger.l('addButton', values[0].message_id);
 								addButton(chat_id, values[0].message_id);
 							} else {//hasNext == false
-								logger.l('search was completed');
+								logger.l('search completed');
 								bot.sendMessage(chat_id,
-									`\u{26A0}The search was completed. No more phrases.`, {parse})
+									`\u{26A0}The search completed. No more phrases.`, {parse})
 							}
 						})
 						.catch((error)=> {
@@ -411,7 +411,7 @@ var processPhrase = (chat_id) => {
 			} else {
 				logger.w('No phrases after that');
 				bot.sendMessage(chat_id,
-					`\u{26A0}The filter was applied. No phrases after that.`, {parse})
+					`\u{26A0}The filter applied. No phrases after that.`, {parse})
 			}
 		})
 		.catch((error) => {
