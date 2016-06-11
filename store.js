@@ -5,7 +5,7 @@ class Store {
 	constructor(db_name) {
 		this.db = new (cradle.Connection)().database(db_name);
 		this.db.exists(function (err, exists) {
-			logger.c(!err && exists,`database ${db_name} connected`,`[store.error] database ${db_name} connection error`,false)
+			logger.c(!err && exists,`database ${db_name} connected`,`database ${db_name} connection error`)
 		});
 	}
 
