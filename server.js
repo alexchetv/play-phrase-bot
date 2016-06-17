@@ -3,15 +3,17 @@
  **Windows users**: most probably ffmpeg and ffprobe will _not_ be in your `%PATH`, so you _must_ set `%FFMPEG_PATH` and `%FFPROBE_PATH`.
  */
 const secret = require('./secret');
-const rp = require('request-promise');
-const cradle = require('cradle');
+const Temp = require('./temp');
+const temp = new Temp('K:/');
+const bhttp = require("bhttp");
 const ellipsize = require('ellipsize');
 const Store = require('./store');
+const store = new Store('telegram');
 const Logger = require('./logger');
-const logger = new Logger('[server]', 'e', './my.log');
+const logger = new Logger('[server]', 'i');
 const fs = require('fs');
 const Util = require('./util.js');
-var store = new Store('telegram');
+
 const Search = require('./search.js');
 const GoogleSpeech = require('./googlespeech.js');
 const TeleBot = require('telebot');
@@ -91,7 +93,7 @@ bot.on(['/recent', '/r'], msg => {
 				let txt = 'Choose from recent:';
 				let keyboard = [[]];
 				doc.searches.forEach((item) => {
-					logger.l('recent',item);
+					logger.l('recent', item);
 					keyboard.push([bot.inlineButton(
 						item,
 						{callback: `/_${item}`}
@@ -126,49 +128,39 @@ bot.on(['text'], (user_msg) => {
 });
 
 bot.on(['voice'], (user_msg) => {
-	logger.l('voice', user_msg);
+	//logger.l('voice', user_msg);
 	bot.getFile(user_msg.voice.file_id)
-		.then((res)=> {
-			logger.l('getFile', res);
-			let link = `https://api.telegram.org/file/bot${secret.token}/${res.result.file_path}`;
-			logger.l('link', link);
-			rp(link, {encoding: null})
-				.then((data) => {
-					let fileName = './temp/' + Util.gen(16) + '.oga';
-					fs.writeFile(fileName, data, (err) => {
-						if (err) {
-							logger.e('file save error', err);
-							fs.unlink(fileName);
-						} else {
-							GoogleSpeech.recognize(fileName)
-								.then((text) => {
-									logger.s("Final transcript is", text);
-									bot.sendMessage(user_msg.from.id,
-										`You say: <b>${text}</b>`, {parse})
-									fs.unlink(fileName);
-								})
-								.catch((err) => {
-									logger.e("recognize error", err);
-									bot.sendMessage(user_msg.from.id,
-										`\u{2757}We have some problem. Please repeat.`, {parse})
-									fs.unlink(fileName);
-								});
-						}
-
-					});
-				})
-				.catch(function (err) {
-					logger.e('download File Error', err);
-					bot.sendMessage(user_msg.from.id,
-						`You say: <b>${text}</b>`, {parse})
-				});
-		})
 		.catch((err)=> {
 			logger.e('getFile Error', err);
-
+		})
+		.then((res)=> {
+			//logger.l('getFile', res);
+			let link = `https://api.telegram.org/file/bot${secret.token}/${res.result.file_path}`;
+			logger.l('link', link);
+			return bhttp.get(link)
+		})
+		.catch((err) => {
+			logger.e('download File Error', err);
+		})
+		.then((data) => {
+			logger.l('download File OK');
+			return temp.write(data.body)
+		})
+		.then((fileName)=> {
+			logger.l('file save OK', fileName);
+			return GoogleSpeech.recognize(fileName)
+		})
+		.then((text) => {
+			logger.s("Final transcript is", text);
+			bot.sendMessage(user_msg.from.id,
+				`You say: <b>${text}</b>`, {parse})
+		})
+		.catch((err) => {
+			logger.e("recognize error", err);
+			bot.sendMessage(user_msg.from.id,
+				`\u{2757}We have some problem. Please repeat.`, {parse})
 		});
-
-});
+})
 
 //callbackQuery************************************************************************
 bot.on('callbackQuery', (msg) => {
@@ -463,57 +455,69 @@ var showPhrase = (chat_id, phrase) => {
 						});
 				})
 		} else {
+			/*			logger.l('showPhrase without tfid');
+			 var readFromAttachStream = store.db.getAttachment('p:' + phrase._id, 'video', function (error) {
+			 if (error) {
+			 logger.e('error getAttachment', error);
+			 reject(error);
+			 }
+			 });
+			 var fileName = 'temp/' + Util.gen(16) + '.mp4';
+			 var writeToFileStream = fs.createWriteStream(fileName);
+			 writeToFileStream.on('finish', () => {
+			 logger.l('sendVideo from stream');
+
+			 bot.sendVideo(chat_id, fs.createReadStream(fileName), {caption, markup})
+			 .then((res)=> {
+			 if (!res || !res.ok) {
+			 logger.l('Not OK sendVideo from stream');
+			 throw error('error Send Video');
+			 } else {
+			 logger.l('OK sendVideo from stream');
+			 fs.unlink(fileName);
+			 if (res.result && res.result.video && res.result.video.file_id) {
+			 store.update('p', phrase._id, {tfid: res.result.video.file_id})
+			 .catch((error)=> {
+			 logger.e('error Merge TFID', error);
+			 });
+			 }
+			 resolve({message_id: res.result.message_id, key: imdb_key});
+			 }
+			 })
+			 .catch((error)=> {
+			 logger.e('Error sendVideo from stream', error);
+			 fs.unlink(fileName);
+			 reject(error);
+			 })
+
+			 })
+			 readFromAttachStream.pipe(writeToFileStream);*/
 			logger.l('showPhrase without tfid');
-			var readFromAttachStream = store.db.getAttachment('p:' + phrase._id, 'video', function (error) {
-				if (error) {
-					logger.e('error getAttachment', error);
-					reject(error);
-				}
-			});
-			var fileName = 'temp/' + Util.gen(16) + '.mp4';
-			var writeToFileStream = fs.createWriteStream(fileName);
-			writeToFileStream.on('finish', () => {
-				logger.l('sendVideo from stream');
-
-
-				/*GoogleSpeech.recognize(fileName)
-				 .then((text) => {
-				 logger.s("Video transcript is", text);*/
-
-				bot.sendVideo(chat_id, fs.createReadStream(fileName), {caption, markup})
-					.then((res)=> {
-						if (!res || !res.ok) {
-							logger.l('Not OK sendVideo from stream');
-							throw error('error Send Video');
-						} else {
-							logger.l('OK sendVideo from stream');
-							fs.unlink(fileName);
-							if (res.result && res.result.video && res.result.video.file_id) {
-								store.update('p', phrase._id, {tfid: res.result.video.file_id})
-									.catch((error)=> {
-										logger.e('error Merge TFID', error);
-									});
-							}
-							resolve({message_id: res.result.message_id, key: imdb_key});
+			store.getAttach('p:' + phrase._id, 'video')
+				.then(data => {
+					return bot.sendVideo(chat_id, data, {caption, markup})
+				})
+				.then((res)=> {
+					if (!res || !res.ok) {
+						logger.l('Not OK sendVideo from stream');
+						throw error('error Send Video');
+					} else {
+						logger.l('OK sendVideo from stream');
+						if (res.result && res.result.video && res.result.video.file_id) {
+							store.update('p', phrase._id, {tfid: res.result.video.file_id})
+								.catch((error)=> {
+									logger.e('error Merge TFID', error);
+								});
 						}
-					})
-					.catch((error)=> {
-						logger.e('Error sendVideo from stream', error);
-						fs.unlink(fileName);
-						reject(error);
-					})
+						resolve({message_id: res.result.message_id, key: imdb_key});
+					}
+				})
+				.catch((error)=> {
+					logger.e('Error sendVideo from stream', error);
+					reject(error);
+				})
 
 
-				/*	})
-				 .catch((err) => {
-				 logger.e("recognize error", err);
-				 fs.unlink(fileName);
-				 reject(error);
-				 });*/
-
-
-			})
-			readFromAttachStream.pipe(writeToFileStream);
 		}
 	})
 }

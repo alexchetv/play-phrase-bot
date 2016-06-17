@@ -4,6 +4,7 @@
   "description": "",
   "main": "server.js",
   "dependencies": {
+    "bhttp": "^1.2.1",
     "cradle": "^0.7.1",
     "ellipsize": "0.0.2",
     "fluent-ffmpeg": "^2.1.0",

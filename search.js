@@ -1,7 +1,7 @@
 "use strict";
 const EventEmitter = require('events');
 const Logger = require('./logger');
-const logger = new Logger('[search]','e','./my.log');
+const logger = new Logger('[search]', 'e', './my.log');
 const rp = require('request-promise');
 const request = require('request');
 const Buffer = require('./buffer.js');
@@ -121,7 +121,7 @@ class Search extends EventEmitter {
 	getProgress() {
 		if (this.rawCount === undefined) return 0;
 		if (this.rawCount === 0) return 100;
-		return Math.floor(this.skip/this.rawCount*100);
+		return Math.floor(this.skip / this.rawCount * 100);
 	}
 
 	//getPhrase*****************************************************************************************
@@ -180,11 +180,11 @@ class Search extends EventEmitter {
 	startLoadVideo() {
 		logger.l('startLoadVideo');
 		this.loading = true;
-		for(let i=0;i< this.buffer.size;i++){
+		for (let i = 0; i < this.buffer.size; i++) {
 			let item = this.buffer.item(i);
 			if (!item.loaded) {
 				this.loadItemVideo(item)
-				.then(() => {
+					.then(() => {
 						if (i == 0) this.emit('ready');
 						this.startLoadVideo()
 					});
@@ -195,9 +195,9 @@ class Search extends EventEmitter {
 	}
 
 //loadItemVideo********************************************************************
-loadItemVideo(item)	{
-	return new Promise((resolve, reject) => {
-		logger.l('loadItemVideo', item.skip);
+	loadItemVideo(item) {
+		return new Promise((resolve, reject) => {
+			logger.l('loadItemVideo', item.skip);
 			this.store.get('p', item._id)
 				.then((doc)=> {
 					if (doc && doc._attachments && doc._attachments.video && doc._attachments.video.stub && (doc._attachments.video.length > 0)) {//video already saved in DB
@@ -244,70 +244,7 @@ loadItemVideo(item)	{
 				})
 
 
-	})
-}
-
-//_load********************************************************************
-	_load(i) {
-		logger.l('_load(i)', i);
-		if (i >= this.buffer.size) {
-			logger.l('i >= this.buffer.size', this.buffer.size);
-			this.loading = false;
-		} else {
-			let item = this.buffer.item(i);
-			logger.l('item', item.skip ,item.loaded);
-			if (item.loaded) {
-				logger.l('item.loaded');
-				this._load(++i);//go to next
-			} else {
-				this.store.get('p', item._id)
-					.then((doc)=> {
-						if (doc && doc._attachments && doc._attachments.video && doc._attachments.video.stub && (doc._attachments.video.length > 0)) {//video already saved in DB
-							item.loaded = true;
-							item.tfid = doc.tfid; //may be null
-							if (i == 0) this.emit('ready');
-							this._load(0);//restart from begining
-						} else {//not saved yet
-
-
-							var writeToAttachStream;
-							//save phrase
-							this.store.save('p', item._id, {
-								text: item.caption,
-								info: item.info,
-								imdb: item.imdb,
-								movie: item.movie
-							})
-								.then((res) => {
-									//and save video as attachment
-									var attachmentData = {
-										name: 'video',
-										'Content-Type': 'video/mp4'
-									}
-									var self = this;
-									writeToAttachStream = self.store.db.saveAttachment({id: res.id, rev: res.rev}, attachmentData,
-										function (error, res) {
-											if (error) {
-												logger.e('error saveAttachment', error);
-											} else {
-												item.loaded = true;
-												if (i == 0) self.emit('ready');
-												self._load(0);//restart from begining
-											}
-										}
-									)
-									request('http://playphrase.me/video/phrase/' + item._id + '.mp4').pipe(writeToAttachStream);
-								})
-								.catch((error)=> {
-									logger.e('error Save PhraseToDB', error);
-								})
-						}
-					})
-					.catch((error)=> {
-						logger.e('[error get from DB]', error);
-					})
-			}
-		}
+		})
 	}
 
 }

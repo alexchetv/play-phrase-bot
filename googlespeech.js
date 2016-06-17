@@ -1,44 +1,24 @@
 const request = require("request");
+const bhttp = require("bhttp");
+
 const fs = require("fs");
-const ffmpeg = require('fluent-ffmpeg');
 const Util = require('./util.js');
 const Logger = require('./logger');
-const logger = new Logger('[googlespeech]','e','./my.log');
-
+const logger = new Logger('[googlespeech]', 'i');
 const API_KEY = "AIzaSyBOti4mM-6x9WDnZIjIeyEU21OpBXqWBgw";
 const UP_URL = 'https://www.google.com/speech-api/full-duplex/v1/up?';
 const DOWN_URL = 'https://www.google.com/speech-api/full-duplex/v1/down?';
 const POST_SAMPLE_RATE = 16000;//44100;
+const ffmpeg = require('fluent-ffmpeg');
+const Temp = require('./temp');
+const temp = new Temp('K:/');
 
-let _convert = (inFile) => {
-	let id = Util.gen(16);
-	let outFile = `./temp/${id}.flac`;
+let _sendSound = (outFile, id) => {
 	return new Promise((resolve, reject) => {
-		ffmpeg()
-			.on('error', (err) => {
-				reject(err);
-			})
-			.on('end', () => {
-				resolve([outFile,id]);
-			})
-			.input(inFile)
-			.output(outFile)
-			.audioFrequency(POST_SAMPLE_RATE)
-			.audioChannels(1)
-			.toFormat('flac')
-			.run();
-	})
-}
-
-let _sendSound = (result) => {
-	logger.l('_sendSound', result);
-	let file = result[0];
-	let id = result[1];
-	return new Promise((resolve, reject) => {
-		let source = fs.createReadStream(file);
+		let source = fs.createReadStream(outFile);
 		source.on('error', (err) => {
 			logger.e('_sendSound error', err);
-			fs.unlink(file);
+			temp.remove(outFile);
 			reject(err);
 		});
 		let params = Util.toUrl({
@@ -59,19 +39,43 @@ let _sendSound = (result) => {
 				}
 			},
 			(error, res, body) => {
+				temp.remove(outFile);
 				if (error) {
-					fs.unlink(file);
 					reject(error);
 				} else {
-					fs.unlink(file);
-					resolve(id)
+					resolve()
 				}
 			});
 		source.pipe(postReq);
 	})
 }
 
+let new_sendSound = (outFile, id) => {
+	let params = Util.toUrl({
+		'output': 'json',
+		'lang': 'en-us',
+		'pFilter': 0,//0- off, 1 - medium, 2 - strict
+		'key': API_KEY,
+		'client': 'chromium',
+		'maxAlternatives': 1,
+		'pair': id
+	});
+	temp.read(outFile)
+		.catch(err => logger.e('read', err))
+		.then((data) => {
+			logger.l('data', data);
+			return bhttp.post(UP_URL + params, data,
+				{
+					'headers': {
+						'content-type': 'audio/x-flac; rate=' + POST_SAMPLE_RATE
+					}
+				});
+		})
+		.catch(err => logger.e('new_sendSound error', err))
+		.then(() => logger.s('new_sendSound Ok'));
 
+
+}
 
 let _getText = (id) => {
 	logger.l('_getText', id);
@@ -79,38 +83,66 @@ let _getText = (id) => {
 		'pair': id
 	});
 	return new Promise((resolve, reject) => {
-		request.get(DOWN_URL + params, function (error, res, body) {
+		logger.l('_getText2', id);
+		//without {noDecode:true} error
+		bhttp.get(DOWN_URL + params, {noDecode: true}, function (error, responce) {
 			if (error) {
 				logger.e("getReq error", error)
 				reject(error);
-			}
-			logger.l('body', body);
-			var results = body.split('\n');
-			try{
-				var last_result = JSON.parse(results[results.length - 2]);
-				if(last_result.result[0] && last_result.result[0].alternative[0]){
-					resolve(last_result.result[0].alternative[0].transcript);
-				} else {
-					resolve('');
+			} else {
+				logger.w('_getText body', responce.body.toString());
+				var results = responce.body.toString().split('\n');
+				try {
+					var last_result = JSON.parse(results[results.length - 2]);
+					if (last_result.result[0] && last_result.result[0].alternative[0]) {
+						resolve(last_result.result[0].alternative[0].transcript);
+					} else {
+						resolve('***********');
+					}
+				}
+				catch (err) {
+					logger.e("getReq catch", err)
+					reject(err);
 				}
 			}
-			catch (err) {
-				reject(err);
-			}
+
 		});
 	});
 }
 
 class GoogleSpeech {
 
-	static recognize(file) {
-		return _convert(file)
-			.then((result) => {
-				_sendSound(result);
-				return _getText(result[1]);
+	//convert inFile and delete it after that, return promise
+	static convert(inFile, format, audioFrequency) {
+		let outFile = temp.genName();
+		return new Promise((resolve, reject) => {
+			ffmpeg()
+				.on('error', (err) => {
+					temp.remove(inFile);
+					reject(err);
+				})
+				.on('end', () => {
+					temp.remove(inFile);
+					resolve(outFile);
+				})
+				.input(inFile)
+				.output(outFile)
+				.audioFrequency(audioFrequency)
+				.audioChannels(1)
+				.toFormat(format)
+				.run();
+		})
+	}
+
+	static recognize(inFile) {
+		let id = Util.gen(16);
+		return this.convert(inFile, 'flac', POST_SAMPLE_RATE)
+			.then((outFile) => {
+				new_sendSound(outFile, id);
+				return _getText(id);
 			})
 	}
 
-}
 
+}
 module.exports = GoogleSpeech;
