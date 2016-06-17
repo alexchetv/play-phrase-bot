@@ -1,6 +1,6 @@
 var cradle = require('cradle');
 const Logger = require('./logger');
-const logger = new Logger('[store]', 'i');
+const logger = new Logger('[store]', 'e');
 class Store {
 	constructor(db_name, auth) {
 		if (auth && auth.username && auth.password) {
@@ -119,7 +119,7 @@ class Store {
 		return new Promise((resolve, reject) => {
 			this.db.getAttachment(id, name, (err, data) => {
 				if (err) {
-					logger.e('getAttach error',err);
+					logger.e('getAttach error', err);
 					reject(err);
 				}
 				else {
@@ -130,17 +130,28 @@ class Store {
 		})
 	}
 
-	saveAttach(id, rev, name, contentType, data) {
+	saveAttach(id, name, contentType, data) {
 		return new Promise((resolve, reject) => {
-			this.db.saveAttachment(
-				{id,rev},
-				{name, 'Content-Type':contentType, body:data},
-				(err) => {
+			let self = this;
+			this.db.get(id, function (err, doc) {
 				if (err) {
+					logger.e('saveAttach get error', err);
 					reject(err);
 				}
 				else {
-					resolve()
+					self.db.saveAttachment(
+						{id, rev: doc._rev},
+						{name, 'Content-Type': contentType, body: data},
+						(err) => {
+							if (err) {
+								logger.e('saveAttach error', err);
+								reject(err);
+							}
+							else {
+								logger.s('saveAttach Ok');
+								resolve()
+							}
+						})
 				}
 			})
 		})

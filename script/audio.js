@@ -4,7 +4,6 @@ const logger = new Logger('[dbscripts]', 'i');
 const Temp = require('./../temp');
 const temp = new Temp('K:/');
 const store = new Store('telegram');
-const POST_SAMPLE_RATE = 16000;//44100;
 const GoogleSpeech = require('./../googlespeech.js');
 
 //itterate through phrases
@@ -31,19 +30,18 @@ store.view('telegram/phrase', {startkey: 'p:', endkey: 'p:\u9999'})
 //convert video to audio and save as attachment
 let convertVideo = (key, doc) => {
 	if (doc && doc._attachments && doc._attachments.video && doc._attachments.video.stub && (doc._attachments.video.length > 0)) {
-		let attachmentData = {name: 'audio', 'Content-Type': 'audio/ogg'};
 		return store.getAttach(key, 'video')
 			.then(data => {
 				return temp.write(data)
 			})
 			.then(inFile => {
-				return GoogleSpeech.convert(inFile, 'opus', POST_SAMPLE_RATE)
+				return GoogleSpeech.convert(inFile, 'opus')
 			})
 			.then(outFile => {
 				return temp.read(outFile)
 			})
 			.then(data => {
-				return store.saveAttach(key, doc._rev, 'audio', 'audio/ogg', data)
+				return store.saveAttach(key, 'audio', 'audio/ogg', data)
 			})
 			.catch(err => logger.e('convertVideo error', err));
 	} else {

@@ -1,11 +1,14 @@
 "use strict";
 const EventEmitter = require('events');
 const Logger = require('./logger');
-const logger = new Logger('[search]', 'e', './my.log');
+const logger = new Logger('[search]', 'i');
 const rp = require('request-promise');
-const request = require('request');
+const bhttp = require("bhttp");
 const Buffer = require('./buffer.js');
 const Store = require('./store.js');
+const Temp = require('./temp');
+const temp = new Temp('K:/');
+const GoogleSpeech = require('./googlespeech.js');
 const MIN_BUFFER = 10;
 const Util = require('./util.js');
 const ID_LENGTH = 16;
@@ -197,6 +200,7 @@ class Search extends EventEmitter {
 //loadItemVideo********************************************************************
 	loadItemVideo(item) {
 		return new Promise((resolve, reject) => {
+			let savedBody;
 			logger.l('loadItemVideo', item.skip);
 			this.store.get('p', item._id)
 				.then((doc)=> {
@@ -205,7 +209,6 @@ class Search extends EventEmitter {
 						item.tfid = doc.tfid; //may be null
 						resolve();
 					} else {//not saved yet
-						var writeToAttachStream;
 						//save phrase
 						this.store.save('p', item._id, {
 							text: item.caption,
@@ -214,24 +217,45 @@ class Search extends EventEmitter {
 							movie: item.movie
 						})
 							.then((res) => {
-								//and save video as attachment
-								var attachmentData = {
-									name: 'video',
-									'Content-Type': 'video/mp4'
-								}
-								var self = this;
-								writeToAttachStream = self.store.db.saveAttachment({id: res.id, rev: res.rev}, attachmentData,
-									function (error, res) {
-										if (error) {
-											logger.e('error saveAttachment', error);
-											reject(error);
-										} else {
-											item.loaded = true;
-											resolve();
-										}
-									}
-								)
-								request('http://playphrase.me/video/phrase/' + item._id + '.mp4').pipe(writeToAttachStream);
+								//download and save video as attachment
+								bhttp.get('http://playphrase.me/video/phrase/' + item._id + '.mp4')
+									.catch((err) => {
+										logger.e('download Video Error', err);
+									})
+									.then((data) => {
+										savedBody = data.body;
+										logger.s('download Video OK');
+										return this.store.saveAttach(res.id, 'video', 'video/mp4', savedBody)
+									})
+
+
+
+
+									.then(() => {
+										logger.s('saveVideoAttachment OK',item._id);
+										return temp.write(savedBody)
+									})
+									.then(inFile => {
+										return GoogleSpeech.convert(inFile, 'opus')
+									})
+									.then(outFile => {
+										return temp.read(outFile)
+									})
+									.then(data => {
+										return this.store.saveAttach('p:'+item._id, 'audio', 'audio/ogg', data)
+									})
+
+
+
+									.then(() => {
+										logger.s('saveAudioAttachment OK',item._id);
+										item.loaded = true;
+										resolve();
+									})
+									.catch((err) => {
+										logger.e('error saveAttachment', err);
+										reject(err);
+									})
 							})
 							.catch((error)=> {
 								logger.e('error Save PhraseToDB', error);

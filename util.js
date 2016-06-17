@@ -26,27 +26,5 @@ class Util {
 			}
 		return str.join("&");
 	}
-
-	//convert into stream
-	static toStream(inStream,  format, audioFrequency) {
-		logger.l('toStream');
-		let pass = new stream.PassThrough({allowHalfOpen :false});
-	pass.on('end', () => {
-			logger.s('pass end');
-		})
-			ffmpeg(inStream)
-				.on('error', (err) => {
-					logger.e('ffmpeg err',err);
-				})
-				.on('end', () => {
-					logger.s('ffmpeg end');
-					//pass.end();
-				})
-				.audioFrequency(audioFrequency)
-				.audioChannels(1)
-				.toFormat(format)
-				.pipe(pass);
-		return pass;
-	}
 }
 module.exports = Util;

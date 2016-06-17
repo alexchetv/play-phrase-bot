@@ -13,44 +13,7 @@ const ffmpeg = require('fluent-ffmpeg');
 const Temp = require('./temp');
 const temp = new Temp('K:/');
 
-let _sendSound = (outFile, id) => {
-	return new Promise((resolve, reject) => {
-		let source = fs.createReadStream(outFile);
-		source.on('error', (err) => {
-			logger.e('_sendSound error', err);
-			temp.remove(outFile);
-			reject(err);
-		});
-		let params = Util.toUrl({
-			'output': 'json',
-			'lang': 'en-us',
-			'pFilter': 0,//0- off, 1 - medium, 2 - strict
-			'key': API_KEY,
-			'client': 'chromium',
-			'maxAlternatives': 1,
-			'pair': id
-		});
-		logger.l('postReq', UP_URL + params);
-		let postReq = request.post(
-			{
-				'url': UP_URL + params,
-				'headers': {
-					'content-type': 'audio/x-flac; rate=' + POST_SAMPLE_RATE
-				}
-			},
-			(error, res, body) => {
-				temp.remove(outFile);
-				if (error) {
-					reject(error);
-				} else {
-					resolve()
-				}
-			});
-		source.pipe(postReq);
-	})
-}
-
-let new_sendSound = (outFile, id) => {
+let sendSound = (outFile, id) => {
 	let params = Util.toUrl({
 		'output': 'json',
 		'lang': 'en-us',
@@ -63,7 +26,6 @@ let new_sendSound = (outFile, id) => {
 	temp.read(outFile)
 		.catch(err => logger.e('read', err))
 		.then((data) => {
-			logger.l('data', data);
 			return bhttp.post(UP_URL + params, data,
 				{
 					'headers': {
@@ -71,14 +33,14 @@ let new_sendSound = (outFile, id) => {
 					}
 				});
 		})
-		.catch(err => logger.e('new_sendSound error', err))
-		.then(() => logger.s('new_sendSound Ok'));
+		.catch(err => logger.e('sendSound error', err))
+		.then(() => logger.s('sendSound Ok'));
 
 
 }
 
-let _getText = (id) => {
-	logger.l('_getText', id);
+let getText = (id) => {
+	logger.l('getText', id);
 	let params = Util.toUrl({
 		'pair': id
 	});
@@ -90,7 +52,7 @@ let _getText = (id) => {
 				logger.e("getReq error", error)
 				reject(error);
 			} else {
-				logger.w('_getText body', responce.body.toString());
+				logger.w('getText body', responce.body.toString());
 				var results = responce.body.toString().split('\n');
 				try {
 					var last_result = JSON.parse(results[results.length - 2]);
@@ -113,7 +75,7 @@ let _getText = (id) => {
 class GoogleSpeech {
 
 	//convert inFile and delete it after that, return promise
-	static convert(inFile, format, audioFrequency) {
+	static convert(inFile, format) {
 		let outFile = temp.genName();
 		return new Promise((resolve, reject) => {
 			ffmpeg()
@@ -127,7 +89,7 @@ class GoogleSpeech {
 				})
 				.input(inFile)
 				.output(outFile)
-				.audioFrequency(audioFrequency)
+				.audioFrequency(POST_SAMPLE_RATE)
 				.audioChannels(1)
 				.toFormat(format)
 				.run();
@@ -136,10 +98,10 @@ class GoogleSpeech {
 
 	static recognize(inFile) {
 		let id = Util.gen(16);
-		return this.convert(inFile, 'flac', POST_SAMPLE_RATE)
+		return this.convert(inFile, 'flac')
 			.then((outFile) => {
-				new_sendSound(outFile, id);
-				return _getText(id);
+				sendSound(outFile, id);
+				return getText(id);
 			})
 	}
 

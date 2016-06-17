@@ -1,7 +1,7 @@
 const fs = require('fs');
 const Util = require('./util.js');
 const Logger = require('./logger');
-const logger = new Logger('[temp]', 'i');
+const logger = new Logger('[temp]', 'e');
 
 class Temp {
 	constructor(path) {

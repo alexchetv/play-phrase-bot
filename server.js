@@ -367,39 +367,48 @@ var processPhrase = (chat_id) => {
 		.then((phrase) => {
 			if (phrase) {
 				logger.l('got Phrase', phrase._id, phrase.hasNext);
-				if (phrase.hasNext) {
-					logger.l('showPhrase with next');
-					showPhrase(chat_id, phrase)
-						.then((res) => {
-							logger.l('set lastPhrase-1', res.message_id, res.key);
-							searches[chat_id].lastPhrase.message_id = res.message_id;
-							searches[chat_id].lastPhrase.key = res.key;
-							logger.l('Processing = false 1');
-							searches[chat_id].processing = false;
-						});// that's all
-				} else {
-					logger.l('Phrase without next');
-					Promise.all([showPhrase(chat_id, phrase), searches[chat_id].getNext()])
-						.then((values) => {
-							logger.l('Promise resolve all', values);
-							logger.l('set lastPhrase-2', values[0].message_id, values[0].key);
-							searches[chat_id].lastPhrase.message_id = values[0].message_id;
-							searches[chat_id].lastPhrase.key = values[0].key;
-							logger.l('Processing = false 2');
-							searches[chat_id].processing = false;
-							if (values[1]) { //hasNext == true
-								logger.l('addButton', values[0].message_id);
-								addButton(chat_id, values[0].message_id);
-							} else {//hasNext == false
-								logger.l('search completed');
-								bot.sendMessage(chat_id,
-									`\u{26A0}The search completed. No more phrases.`, {parse})
-							}
-						})
-						.catch((error)=> {
-							logger.e('promise.all error', error);
-						});
-				}
+
+				store.getAttach('p:' + phrase._id, 'audio')
+					.then(data => {
+						return bot.sendVoice(chat_id, data);
+					})
+					.then(() => {
+						if (phrase.hasNext) {
+							logger.l('showPhrase with next');
+							showPhrase(chat_id, phrase)
+								.then((res) => {
+									logger.l('set lastPhrase-1', res.message_id, res.key);
+									searches[chat_id].lastPhrase.message_id = res.message_id;
+									searches[chat_id].lastPhrase.key = res.key;
+									logger.l('Processing = false 1');
+									searches[chat_id].processing = false;
+								});// that's all
+						} else {
+							logger.l('Phrase without next');
+							Promise.all([showPhrase(chat_id, phrase), searches[chat_id].getNext()])
+								.then((values) => {
+									logger.l('Promise resolve all', values);
+									logger.l('set lastPhrase-2', values[0].message_id, values[0].key);
+									searches[chat_id].lastPhrase.message_id = values[0].message_id;
+									searches[chat_id].lastPhrase.key = values[0].key;
+									logger.l('Processing = false 2');
+									searches[chat_id].processing = false;
+									if (values[1]) { //hasNext == true
+										logger.l('addButton', values[0].message_id);
+										addButton(chat_id, values[0].message_id);
+									} else {//hasNext == false
+										logger.l('search completed');
+										bot.sendMessage(chat_id,
+											`\u{26A0}The search completed. No more phrases.`, {parse})
+									}
+								})
+								.catch((error)=> {
+									logger.e('promise.all error', error);
+								});
+						}
+					})
+
+
 			} else {
 				logger.w('No phrases after that');
 				bot.sendMessage(chat_id,
@@ -455,43 +464,6 @@ var showPhrase = (chat_id, phrase) => {
 						});
 				})
 		} else {
-			/*			logger.l('showPhrase without tfid');
-			 var readFromAttachStream = store.db.getAttachment('p:' + phrase._id, 'video', function (error) {
-			 if (error) {
-			 logger.e('error getAttachment', error);
-			 reject(error);
-			 }
-			 });
-			 var fileName = 'temp/' + Util.gen(16) + '.mp4';
-			 var writeToFileStream = fs.createWriteStream(fileName);
-			 writeToFileStream.on('finish', () => {
-			 logger.l('sendVideo from stream');
-
-			 bot.sendVideo(chat_id, fs.createReadStream(fileName), {caption, markup})
-			 .then((res)=> {
-			 if (!res || !res.ok) {
-			 logger.l('Not OK sendVideo from stream');
-			 throw error('error Send Video');
-			 } else {
-			 logger.l('OK sendVideo from stream');
-			 fs.unlink(fileName);
-			 if (res.result && res.result.video && res.result.video.file_id) {
-			 store.update('p', phrase._id, {tfid: res.result.video.file_id})
-			 .catch((error)=> {
-			 logger.e('error Merge TFID', error);
-			 });
-			 }
-			 resolve({message_id: res.result.message_id, key: imdb_key});
-			 }
-			 })
-			 .catch((error)=> {
-			 logger.e('Error sendVideo from stream', error);
-			 fs.unlink(fileName);
-			 reject(error);
-			 })
-
-			 })
-			 readFromAttachStream.pipe(writeToFileStream);*/
 			logger.l('showPhrase without tfid');
 			store.getAttach('p:' + phrase._id, 'video')
 				.then(data => {
@@ -516,8 +488,6 @@ var showPhrase = (chat_id, phrase) => {
 					logger.e('Error sendVideo from stream', error);
 					reject(error);
 				})
-
-
 		}
 	})
 }
