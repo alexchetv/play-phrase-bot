@@ -1,6 +1,6 @@
 const ALPHABET = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
 const Logger = require('./logger');
-const logger = new Logger('[util]', 'i');
+const logger = new Logger('[util]', 'e');
 const stream = require('stream');
 class Util {
 

@@ -1,13 +1,13 @@
 "use strict";
 const EventEmitter = require('events');
 const Logger = require('./logger');
-const logger = new Logger('[search]', 'i');
+const logger = new Logger('[search]', 'e');
 const rp = require('request-promise');
 const bhttp = require("bhttp");
 const Buffer = require('./buffer.js');
 const Store = require('./store.js');
 const Temp = require('./temp');
-const temp = new Temp('K:/');
+//const temp = new Temp('K:/');
 const GoogleSpeech = require('./googlespeech.js');
 const MIN_BUFFER = 10;
 const Util = require('./util.js');
@@ -233,13 +233,13 @@ class Search extends EventEmitter {
 
 									.then(() => {
 										logger.s('saveVideoAttachment OK',item._id);
-										return temp.write(savedBody)
+										return Temp.write(savedBody)
 									})
 									.then(inFile => {
 										return GoogleSpeech.convert(inFile, 'opus')
 									})
 									.then(outFile => {
-										return temp.read(outFile)
+										return Temp.read(outFile)
 									})
 									.then(data => {
 										return this.store.saveAttach('p:'+item._id, 'audio', 'audio/ogg', data)

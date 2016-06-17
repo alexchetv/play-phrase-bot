@@ -4,14 +4,14 @@ const bhttp = require("bhttp");
 const fs = require("fs");
 const Util = require('./util.js');
 const Logger = require('./logger');
-const logger = new Logger('[googlespeech]', 'i');
+const logger = new Logger('[googlespeech]', 'e');
 const API_KEY = "AIzaSyBOti4mM-6x9WDnZIjIeyEU21OpBXqWBgw";
 const UP_URL = 'https://www.google.com/speech-api/full-duplex/v1/up?';
 const DOWN_URL = 'https://www.google.com/speech-api/full-duplex/v1/down?';
 const POST_SAMPLE_RATE = 16000;//44100;
 const ffmpeg = require('fluent-ffmpeg');
 const Temp = require('./temp');
-const temp = new Temp('K:/');
+//const temp = new Temp('K:/');
 
 let sendSound = (outFile, id) => {
 	let params = Util.toUrl({
@@ -23,7 +23,7 @@ let sendSound = (outFile, id) => {
 		'maxAlternatives': 1,
 		'pair': id
 	});
-	temp.read(outFile)
+	Temp.read(outFile)
 		.catch(err => logger.e('read', err))
 		.then((data) => {
 			return bhttp.post(UP_URL + params, data,
@@ -76,15 +76,15 @@ class GoogleSpeech {
 
 	//convert inFile and delete it after that, return promise
 	static convert(inFile, format) {
-		let outFile = temp.genName();
+		let outFile = Temp.genName();
 		return new Promise((resolve, reject) => {
 			ffmpeg()
 				.on('error', (err) => {
-					temp.remove(inFile);
+					Temp.remove(inFile);
 					reject(err);
 				})
 				.on('end', () => {
-					temp.remove(inFile);
+					Temp.remove(inFile);
 					resolve(outFile);
 				})
 				.input(inFile)

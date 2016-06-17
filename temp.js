@@ -1,14 +1,12 @@
+const secret = require('./secret');
 const fs = require('fs');
 const Util = require('./util.js');
 const Logger = require('./logger');
 const logger = new Logger('[temp]', 'e');
 
 class Temp {
-	constructor(path) {
-		this.BASE = path;
-	}
 
-	write (data) {
+	static write (data) {
 		let name = Util.gen(16);
 		return new Promise((resolve, reject) => {
 			fs.writeFile(this.BASE+'/'+name, data, (err) => {
@@ -21,11 +19,11 @@ class Temp {
 		})
 	}
 
-	genName () {
+	static genName () {
 		return this.BASE+'/'+Util.gen(16);
 	}
 
-	read (name) {
+	static read (name) {
 		return new Promise((resolve, reject) => {
 			fs.readFile(name, (err, data) => {
 				fs.unlink(name);
@@ -35,7 +33,7 @@ class Temp {
 		})
 	}
 
-	remove (name) {
+	static remove (name) {
 		return new Promise((resolve, reject) => {
 			fs.unlink(name, (err) => {
 				if (err) reject(err);
@@ -44,5 +42,7 @@ class Temp {
 		})
 	}
 }
+
+Temp.BASE = secret.ramDisk;
 
 module.exports = Temp;

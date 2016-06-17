@@ -4,13 +4,13 @@
  */
 const secret = require('./secret');
 const Temp = require('./temp');
-const temp = new Temp('K:/');
+//const temp = new Temp('K:/');
 const bhttp = require("bhttp");
 const ellipsize = require('ellipsize');
 const Store = require('./store');
 const store = new Store('telegram');
 const Logger = require('./logger');
-const logger = new Logger('[server]', 'i');
+const logger = new Logger('[server]', 'e');
 const fs = require('fs');
 const Util = require('./util.js');
 
@@ -144,7 +144,7 @@ bot.on(['voice'], (user_msg) => {
 		})
 		.then((data) => {
 			logger.l('download File OK');
-			return temp.write(data.body)
+			return Temp.write(data.body)
 		})
 		.then((fileName)=> {
 			logger.l('file save OK', fileName);
