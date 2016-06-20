@@ -78,6 +78,7 @@ class Search extends EventEmitter {
 							_id: item._id,
 							skip: this.skip,
 							caption: item.text,
+							searchText: item.searchText,
 							info: item.video_info.info,
 							imdb: item.video_info.imdb,
 							movie: item.movie,
@@ -212,6 +213,7 @@ class Search extends EventEmitter {
 						//save phrase
 						this.store.save('p', item._id, {
 							text: item.caption,
+							searchText: item.searchText,
 							info: item.info,
 							imdb: item.imdb,
 							movie: item.movie
@@ -227,10 +229,6 @@ class Search extends EventEmitter {
 										logger.s('download Video OK');
 										return this.store.saveAttach(res.id, 'video', 'video/mp4', savedBody)
 									})
-
-
-
-
 									.then(() => {
 										logger.s('saveVideoAttachment OK',item._id);
 										return Temp.write(savedBody)
@@ -244,9 +242,6 @@ class Search extends EventEmitter {
 									.then(data => {
 										return this.store.saveAttach('p:'+item._id, 'audio', 'audio/ogg', data)
 									})
-
-
-
 									.then(() => {
 										logger.s('saveAudioAttachment OK',item._id);
 										item.loaded = true;
