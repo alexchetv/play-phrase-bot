@@ -8,6 +8,7 @@
     "cradle": "^0.7.1",
     "ellipsize": "0.0.2",
     "fluent-ffmpeg": "^2.1.0",
+    "prompt": "^1.0.0",
     "request-promise": "^3.0.0",
     "telebot": "^1.0.5"
   },
