@@ -46,7 +46,6 @@ let stt = (limit) => {
 			res.every((item)=> {
 				let doc=item.value;
 				let key=item.key
-				console.log('oooooo');
 				//if not yet speech-to-text
 				if (!doc.stt) {
 					//add to chain
@@ -59,6 +58,7 @@ let stt = (limit) => {
 				}
 				return counter < limit;
 			})
+			console.log('found:',counter);
 		})
 		.catch((err) => {
 			logger.e('view error', err)
@@ -67,9 +67,9 @@ let stt = (limit) => {
 
 //recognize and save
 let sttVideo = (key, doc) => {
-	console.log('uuuuuuuuuu');
+	console.log('stt');
 	if (doc && doc._attachments && doc._attachments.video && doc._attachments.video.stub && (doc._attachments.video.length > 0)) {
-		console.log('jjjjjjj');
+		console.log('video');
 		return store.getAttach(key, 'video')
 			.then(data => {
 				return Temp.write(data)
@@ -77,10 +77,11 @@ let sttVideo = (key, doc) => {
 			.then(inFile => {
 				return GoogleSpeech.recognize(inFile)
 			})
+			.catch(err => logger.e('sttVideo error', key, err))
 			.then(text => {
 				return store.update('', key, {stt:text})
 			})
-			.catch(err => logger.e('sttVideo error', err));
+			.catch(err => logger.e('update stt error', key, err));
 	} else {
 		return Promise.reject('No Video');
 	}
