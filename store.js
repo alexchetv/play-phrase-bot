@@ -48,7 +48,7 @@ class Store {
 	}
 
 
-	save(pref, id, obj) {
+	save(pref, id, obj, rewrite = true) {
 		let self = this;
 		if (pref) {
 			pref += ':';
@@ -69,13 +69,17 @@ class Store {
 					}
 				}
 				else {
-					self.db.save(`${pref}${id}`, doc._rev, obj, function (err, res) {
-						if (err) {
-							reject(err);
-						} else {
-							resolve(res)
-						}
-					})
+					if (rewrite) {
+						self.db.save(`${pref}${id}`, doc._rev, obj, function (err, res) {
+							if (err) {
+								reject(err);
+							} else {
+								resolve(res)
+							}
+						})
+					} else {
+						resolve(doc)
+					}
 				}
 			})
 		})
