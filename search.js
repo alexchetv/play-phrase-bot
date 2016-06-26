@@ -6,6 +6,7 @@ const rp = require('request-promise');
 const bhttp = require("bhttp");
 const Buffer = require('./buffer.js');
 const Store = require('./store.js');
+const Phrasio = require('./phrasio.js');
 const Temp = require('./temp');
 //const temp = new Temp('K:/');
 const GoogleSpeech = require('./googlespeech.js');
@@ -28,6 +29,7 @@ class Search extends EventEmitter {
 		this.lastPhrase = {}
 		this.ended = false; //flag
 		this.id = Util.gen(ID_LENGTH);
+		//filter by movie title function
 		this.filter = this.movie ? (item) => {
 			return (item.video_info.info.split('/')[0].toLowerCase().includes(this.movie))
 		} : null;
@@ -71,6 +73,7 @@ class Search extends EventEmitter {
 	fillBuffer(feed) {
 		this.filling = true;
 		if (feed && feed[0]) {
+			Phrasio.save(feed);
 			feed.forEach((item) => {
 				if (!this.movie || this.filter(item)) {
 					this.buffer.enqueue(
