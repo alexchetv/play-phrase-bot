@@ -12,3 +12,18 @@ store.save('','_design/telegram',{
 		 }
 	 }
  })
+
+store.save('','_design/foo',{
+	"fulltext": {
+		"by_movie": {
+			'index':'function(doc) { var ret=new Document(); ret.add(doc.info,{"field":"default"}); return ret }'
+		},
+		"by_text": {
+			"index":'function(doc) { var ret=new Document(); ret.add(doc.text,{"field":"default"}); return ret }'
+		},
+		"by_searchText": {
+			"index":'function(doc) { var ret=new Document(); ret.add(doc.searchText,{"field":"default"}); return ret }'
+		}
+	}
+})
+
