@@ -6,12 +6,12 @@ const logger = new Logger('[phrasio]', 'i');
 class Phrasio {
 	static save(feed) {
 		feed.forEach((item) => {
-			store.save('p', item._id,
+			store.save('p:' + item._id,
 				{
 					text: item.text,
-					searchText: item.searchText.toLowerCase().replace(/\s+/g,'_'),
+					searchText: '_' + item.searchText.toLowerCase().replace(/\s+/g,'_').replace(/"/g,'') + '_',
 					info: item.video_info.info,
-					searchMovie: item.video_info.info.split('/')[0].toLowerCase().trim().replace(/\s+/g,'_'),
+					searchMovie: '_' + item.video_info.info.split('/')[0].toLowerCase().trim().replace(/\s+/g,'_').replace(/"/g,'') + '_',
 					imdb: item.video_info.imdb,
 					movie: item.movie
 				},

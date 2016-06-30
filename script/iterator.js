@@ -6,7 +6,7 @@ const Logger = require('./../logger');
 const logger = new Logger('[correct]', 'i');
 
 
-//itterate through phrases
+//iterate through phrases
 
 iterator('http://localhost:5984/phrasio'/*,'foo/phrase'*/,(doc)=>{
 	//logger.i('ok',doc);
@@ -25,7 +25,7 @@ iterator('http://localhost:5984/phrasio'/*,'foo/phrase'*/,(doc)=>{
 			n.searchMovie = doc.doc.searchMovie.replace(/"/g,'');
 		}
 		if (n) {
-			store.update('',doc.id,n);
+			store.update(doc.id,n);
 		}
 	}
 },{concurrency:5,include_docs:true})

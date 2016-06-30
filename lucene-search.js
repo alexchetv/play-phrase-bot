@@ -1,7 +1,7 @@
 "use strict";
 const EventEmitter = require('events');
 const Logger = require('./logger');
-const logger = new Logger('[search]', 'e');
+const logger = new Logger('[lucene-search]', 'e');
 const rp = require('request-promise');
 const bhttp = require("bhttp");
 const Buffer = require('./buffer.js');
@@ -14,13 +14,17 @@ const MIN_BUFFER = 10;
 const Util = require('./util.js');
 const ID_LENGTH = 16;
 
-class Search extends EventEmitter {
+class LuceneSearch extends EventEmitter {
 	constructor(query, movie) {
 		super();
-		this.type = 'old';
+logger.s('lucene',query, movie);
+		this.type = 'lucene';
 		this.store = new Store('telegram');
-		this.query = query;
-		this.movie = movie;
+		this.query = `t:*_${query.replace(/\s+/g,'_')}_*`;
+		if (movie) {
+			this.query += ` AND m:*${movie.replace(/\s+/g,'_')}*`;
+		}
+		logger.s('lucene2',this.query);
 		this.buffer = new Buffer();
 		this.filling = false; //flag
 		this.loading = false; //flag
@@ -30,41 +34,35 @@ class Search extends EventEmitter {
 		this.lastPhrase = {}
 		this.ended = false; //flag
 		this.id = Util.gen(ID_LENGTH);
-		//filter by movie title function
-		this.filter = this.movie ? (item) => {
-			return (item.video_info.info.split('/')[0].toLowerCase().includes(this.movie))
-		} : null;
+
+
 		this.on('add', () => {
 			logger.l('on Add');
 			if (!this.loading) this.startLoadVideo();
 		});
 	}
-
+//http://localhost:5984/_fti/local/phrasio/_design/bar/m_t?q=t:*_know_it_*%20AND%20m:*futur*&include_docs=true
 	init() {
 		return new Promise((resolve, reject) => {
 			rp.get({
-				url: 'http://playphrase.me:9093/search',
+				url: 'http://localhost:5984/_fti/local/phrasio/_design/bar/m_t',
 				json: true,
 				qs: {
 					q: this.query,
+					include_docs: true,
 					skip: 0
 				}
 			})
 				.then((res)=> {
-					if (res.result == 'OK') {
+					logger.s('Search Init OK', res.rows[0]);
 						this.rawCount = res.count;
-						this.fillBuffer(res.phrases);
+						this.fillBuffer(res.rows);
 						resolve({
-							count: res.count,
-							suggestions: res.suggestions
+							count: res.total_rows
 						});
-					} else {
-						throw res;
-					}
-
 				})
 				.catch((error)=> {
-					logger.e('Search Init Request Error', error)
+					logger.e('Search Init Request Error', error);
 					reject(error);
 				});
 		})
@@ -74,25 +72,23 @@ class Search extends EventEmitter {
 	fillBuffer(feed) {
 		this.filling = true;
 		if (feed && feed[0]) {
-			//Phrasio.save(feed);
 			feed.forEach((item) => {
-				if (!this.movie || this.filter(item)) {
+					let doc = item.doc;
 					this.buffer.enqueue(
 						{
-							_id: 'p:'+item._id,
+							_id: doc._id,
 							skip: this.skip,
-							caption: item.text,
-							searchText: item.searchText,
-							info: item.video_info.info,
-							imdb: item.video_info.imdb,
-							movie: item.movie,
+							caption: doc.text,
+							searchText: doc.searchText,
+							info: doc.info,
+							imdb: doc.imdb,
+							movie: doc.movie,
 							number: this.filteredCount,
 							loaded: false
 						}
 					)
 					this.filteredCount++;
 					this.emit('add');
-				}
 				this.skip++;
 			})
 		}
@@ -101,24 +97,21 @@ class Search extends EventEmitter {
 			return;
 		}
 		rp.get({
-			url: 'http://playphrase.me:9093/search',
+			url: 'http://localhost:5984/_fti/local/phrasio/_design/bar/m_t',
 			json: true,
 			qs: {
 				q: this.query,
+				include_docs: true,
 				skip: this.skip
 			}
 		})
 			.then((res)=> {
-				if (res.result == 'OK') {
-					if (res.phrases.length == 0) {
+					if (res.rows.length == 0) {
 						this.ended = true;
 						this.emit('end');
 					} else {
-						this.fillBuffer(res.phrases);
+						this.fillBuffer(res.rows);
 					}
-				} else {
-					throw res;
-				}
 			})
 			.catch((error)=> {
 				this.filling = false;
@@ -206,10 +199,11 @@ class Search extends EventEmitter {
 	loadItemVideo(item) {
 		return new Promise((resolve, reject) => {
 			let savedBody;
-			logger.l('loadItemVideo', item.skip);
+			logger.l('loadItemVideo', item.skip, item._id);
 			this.store.get(item._id)
 				.then((doc)=> {
-					if (doc && doc._attachments && doc._attachments.video && doc._attachments.video.stub && (doc._attachments.video.length > 0)) {//video already saved in DB
+					logger.s('get doc',item._id);
+					if (doc && doc._attachments && doc._attachments.video && doc._attachments.video.stub && (doc._attachments.video.length > 100)) {//video already saved in DB
 						item.loaded = true;
 						item.tfid = doc.tfid; //may be null
 						resolve();
@@ -271,4 +265,4 @@ class Search extends EventEmitter {
 	}
 
 }
-module.exports = Search;
+module.exports = LuceneSearch;

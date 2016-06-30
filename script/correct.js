@@ -17,7 +17,7 @@ const logger = new Logger('[correct]', 'i');
 					n.searchMovie = '_' + doc.searchMovie + '_';
 				}
 				if (n) {
-					store.update('',key,n);
+					store.update(key,n);
 				}
 
 			})

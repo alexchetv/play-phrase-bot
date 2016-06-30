@@ -13,7 +13,7 @@ const Logger = require('./logger');
 const logger = new Logger('[server]', 'e');
 const fs = require('fs');
 const Util = require('./util.js');
-
+const LuceneSearch = require('./lucene-search.js');
 const Search = require('./search.js');
 const GoogleSpeech = require('./googlespeech.js');
 const TeleBot = require('telebot');
@@ -28,6 +28,9 @@ const bot = new TeleBot({
 bot.username = secret.username;
 const parse = 'HTML';
 var searches = {};
+const top = [
+	'you','i','to','the','a','and','that','it','of','me','what','in','this','know','for','no','have','my','just','not','do','be','on','your','was','we','with','so','but','all','well','he','about','right','get','here','out','like','yeah','if','her','she','can','up','want','think','now','go','him','at'
+];
 //start command *******************************************************************
 bot.on(['/start', '/s', '/help', '/h'], msg => {
 	bot.sendMessage(msg.from.id,
@@ -41,7 +44,7 @@ To repeat one of recent searches send /recent (or /r)`,
 
 //set movie filter *******************************************************************
 bot.on(['/movie', '/m'], msg => {
-	store.get('u', msg.from.id)
+	store.get('u:'+ msg.from.id)
 		.then(doc => {
 			let txt = '';
 			let keyboard = [[
@@ -86,7 +89,7 @@ bot.on(['/movie', '/m'], msg => {
 //show recent buttons *******************************************************************
 bot.on(['/recent', '/r'], msg => {
 
-	store.get('u', msg.from.id)
+	store.get('u:'+ msg.from.id)
 		.then(doc => {
 			if (doc && doc.searches && doc.searches[0]) {
 
@@ -187,7 +190,7 @@ bot.on('callbackQuery', (msg) => {
 		switch (choice) {
 			case 'off':
 			{
-				store.update('u', chat_id, {movie: null})
+				store.update('u:'+chat_id, {movie: null})
 					.then(() => {
 						searches[chat_id] = null;//the search was destroyed
 						bot.sendMessage(chat_id, `\u{26A0}The filter by movie title is DISABLED from now`)
@@ -242,7 +245,7 @@ bot.connect();
 var saveSearch = (chat_id, text) => {
 
 
-	store.get('u', chat_id)
+	store.get('u:'+ chat_id)
 		.then((doc) => {
 			let searches = doc && doc.searches || [];
 			searches.unshift(text);
@@ -254,7 +257,7 @@ var saveSearch = (chat_id, text) => {
 			if (searches.length > 5) {
 				searches.length = 5;
 			}
-			return store.update('u', chat_id, {searches: searches});
+			return store.update('u:' + chat_id, {searches: searches});
 		})
 		.catch(err => {
 			logger.e('saveSearch', err);
@@ -264,7 +267,7 @@ var saveSearch = (chat_id, text) => {
 }
 
 var setMovieFilter = (chat_id, new_filter) => {
-	store.get('u', chat_id)
+	store.get('u:'+ chat_id)
 		.then((doc) => {
 			if (typeof new_filter == 'number') {
 				new_filter = doc.recent[new_filter];
@@ -279,7 +282,7 @@ var setMovieFilter = (chat_id, new_filter) => {
 			if (new_recent.length > 5) {
 				new_recent.length = 5;
 			}
-			return store.update('u', chat_id, {movie: new_filter, recent: new_recent});
+			return store.update('u:' + chat_id, {movie: new_filter, recent: new_recent});
 		})
 		.then(()=> {
 			searches[chat_id] = null;//the search was destroyed
@@ -303,12 +306,18 @@ var startSearch = (chat_id, norm_text) => {
 	} else {
 		logger.w('no lastPhrase');
 	}
-	store.get('u', chat_id)
+	store.get('u:'+ chat_id)
 		.then((doc) => {//got movie filter
 			movie = doc && doc.movie;
 			logger.l('got movie filter', movie);
 			movieMes = movie ? ' in <b>*' + movie + '*</b>' : '';
-			searches[chat_id] = new Search(norm_text, movie);
+			let wordArray = norm_text.split(' ');
+			let frequent = wordArray.some((word)=>{return top.includes(word)});
+			if (frequent){
+				searches[chat_id] = new LuceneSearch(norm_text, movie);
+			} else {
+				searches[chat_id] = new Search(norm_text, movie);
+			}
 			return bot.sendMessage(chat_id, `${playphrase_link} ${movieMes} is seeking …`, {parse})
 		})
 		.then((result) => {//got shown first message
@@ -342,7 +351,7 @@ var startSearch = (chat_id, norm_text) => {
 			} else {
 				return bot.editText(
 					{chatId: chat_id, messageId: first_msg.message_id},
-					`${playphrase_link} ${movieMes}\nFound ${res.count}${movie ? ' (without filter)' : ''}`,
+					`${playphrase_link} ${movieMes}\nFound ${res.count}${(movie && searches[chat_id].type == 'old')? ' (without filter)' : ''}`,
 					{parse}
 				)
 					.then(() => {//got edited first message
@@ -368,7 +377,7 @@ var processPhrase = (chat_id) => {
 			if (phrase) {
 				logger.l('got Phrase', phrase._id, phrase.hasNext);
 
-				store.getAttach('p:' + phrase._id, 'audio')
+				store.getAttach(phrase._id, 'audio')
 					.then(data => {
 						return bot.sendVoice(chat_id, data);
 					})
@@ -465,7 +474,7 @@ var showPhrase = (chat_id, phrase) => {
 				})
 		} else {
 			logger.l('showPhrase without tfid');
-			store.getAttach('p:' + phrase._id, 'video')
+			store.getAttach(phrase._id, 'video')
 				.then(data => {
 					return bot.sendVideo(chat_id, data, {caption, markup})
 				})
@@ -476,7 +485,7 @@ var showPhrase = (chat_id, phrase) => {
 					} else {
 						logger.l('OK sendVideo from stream');
 						if (res.result && res.result.video && res.result.video.file_id) {
-							store.update('p', phrase._id, {tfid: res.result.video.file_id})
+							store.update(phrase._id, {tfid: res.result.video.file_id})
 								.catch((error)=> {
 									logger.e('error Merge TFID', error);
 								});

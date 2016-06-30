@@ -79,7 +79,7 @@ let sttVideo = (key, doc) => {
 			})
 			.catch(err => logger.e('sttVideo error', key, err))
 			.then(text => {
-				return store.update('', key, {stt:text})
+				return store.update(key, {stt:text})
 			})
 			.catch(err => logger.e('update stt error', key, err));
 	} else {

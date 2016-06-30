@@ -3,7 +3,7 @@ const Store = require('./../store');
 const store = new Store('phrasio',{username: secret.DBadminLogin, password: secret.DBadminPassword});
 
 //save view "phrase"
-store.save('','_design/foo',{
+store.save('_design/foo',{
 	 phrase: {
 		 map: function (doc) {
 			  {
@@ -30,7 +30,7 @@ store.save('','_design/foo',{
 	}
  })
 
-store.save('','_design/bar',{
+store.save('_design/bar',{
 	views:{},
 	"fulltext": {
 		//http://localhost:5984/_fti/local/phrasio/_design/bar/m_t?q=t:*_know_it_*%20AND%20m:*futur*&include_docs=true

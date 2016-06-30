@@ -15,12 +15,9 @@ class Store {
 		});
 	}
 
-	get(pref, id) {
-		if (pref) {
-			pref += ':';
-		}
+	get(id) {
 		return new Promise((resolve, reject) => {
-			this.db.get(`${pref}${id}`, function (err, doc) {
+			this.db.get(id, function (err, doc) {
 				if (err) {
 					if (err.error == 'not_found') {
 						resolve(null)
@@ -48,16 +45,13 @@ class Store {
 	}
 
 
-	save(pref, id, obj, rewrite = true) {
+	save(id, obj, rewrite = true) {
 		let self = this;
-		if (pref) {
-			pref += ':';
-		}
 		return new Promise((resolve, reject) => {
-			this.db.get(`${pref}${id}`, function (err, doc) {
+			this.db.get(id, function (err, doc) {
 				if (err) {
 					if (err.error == 'not_found') {
-						self.db.save(`${pref}${id}`, obj, function (err, res) {
+						self.db.save(id, obj, function (err, res) {
 							if (err) {
 								reject(err);
 							} else {
@@ -70,7 +64,7 @@ class Store {
 				}
 				else {
 					if (rewrite) {
-						self.db.save(`${pref}${id}`, doc._rev, obj, function (err, res) {
+						self.db.save(id, doc._rev, obj, function (err, res) {
 							if (err) {
 								reject(err);
 							} else {
@@ -85,16 +79,13 @@ class Store {
 		})
 	}
 
-	update(pref, id, obj) {
+	update(id, obj) {
 		let self = this;
-		if (pref) {
-			pref += ':';
-		}
 		return new Promise((resolve, reject) => {
-			this.db.get(`${pref}${id}`, function (err, doc) {
+			this.db.get(id, function (err, doc) {
 				if (err) {
 					if (err.error == 'not_found') {
-						self.db.save(`${pref}${id}`, obj, function (err, res) {
+						self.db.save(id, obj, function (err, res) {
 							if (err) {
 								reject(err);
 							} else {
@@ -107,7 +98,7 @@ class Store {
 				}
 				else {
 					Object.assign(doc, obj);
-					self.db.save(`${pref}${id}`, doc._rev, doc, function (err, res) {
+					self.db.save(id, doc._rev, doc, function (err, res) {
 						if (err) {
 							reject(err);
 						} else {
