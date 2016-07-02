@@ -29,7 +29,7 @@ bot.username = secret.username;
 const parse = 'HTML';
 var searches = {};
 const top = [
-	'you','i','to','the','a','and','that','it','of','me','what','in','this','know','for','no','have','my','just','not','do','be','on','your','was','we','with','so','but','all','well','he','about','right','get','here','out','like','yeah','if','her','she','can','up','want','think','now','go','him','at'
+	'you','i','to','the','a','and','that','it','of','me','what','in','this','know','for','no','have','my','just','not','do','be','on','your','was','we','with','so','but','all','well','he','about','right','get','here','out','like','yeah','if','her','she','can','up','want','think','now','go','him','at','how','there','one','why','see','come','good','they','really','would','look','when','time','will','back','mean','tell','from','hey','were','could','yes','his','or','something','who','bacause','some','then','say','take','an','way','us','little','make','need','never','too','love','sure','them','more','over','our','sorry','where','let','thing','maybe'
 ];
 //start command *******************************************************************
 bot.on(['/start', '/s', '/help', '/h'], msg => {
@@ -117,7 +117,7 @@ bot.on(['/recent', '/r'], msg => {
 //begin search *******************************************************************
 bot.on(['text'], (user_msg) => {
 	let chat_id = user_msg.from.id;
-	var norm_text = user_msg.text.toLowerCase();
+	var norm_text = user_msg.text.toLowerCase().replace(/"|,/g,'');
 	if (user_msg.text.startsWith('/')) {
 		return;
 	}
